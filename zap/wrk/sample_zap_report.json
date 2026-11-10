@@ -1,0 +1,151 @@
+{
+  "@version": "2.14.0",
+  "@generated": "Sun, 8 Nov 2026 12:45:00",
+  "site": [
+    {
+      "@name": "https://example-corp.ai-asaas.com",
+      "@host": "example-corp.ai-asaas.com",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "40018",
+          "alertRef": "40018-1",
+          "alert": "SQL Injection",
+          "name": "SQL Injection",
+          "riskcode": "3",
+          "confidence": "3",
+          "riskdesc": "High (High)",
+          "desc": "<p>SQL injection may be possible. An attacker can manipulate backend database queries, allowing unauthorized data access, modification, or administrative command execution.</p>",
+          "instances": [
+            {
+              "uri": "https://example-corp.ai-asaas.com/search?q=test'",
+              "method": "GET",
+              "param": "q",
+              "attack": "test' OR '1'='1",
+              "evidence": "syntax error near SELECT * FROM items WHERE query = 'test''"
+            }
+          ],
+          "count": "1",
+          "solution": "<p>Use parameterized queries (prepared statements) or Object-Relational Mapping (ORM) with proper escaping. Never concatenate untrusted user inputs directly into database queries.</p>",
+          "otherinfo": "The response contained raw database exception headers.",
+          "reference": "<p>https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html</p>",
+          "cweid": "89",
+          "wascid": "19",
+          "sourceid": "1"
+        },
+        {
+          "pluginid": "10038",
+          "alertRef": "10038-1",
+          "alert": "Content Security Policy (CSP) Header Not Set",
+          "name": "Content Security Policy (CSP) Header Not Set",
+          "riskcode": "2",
+          "confidence": "3",
+          "riskdesc": "Medium (High)",
+          "desc": "<p>Content Security Policy (CSP) is an added layer of security that helps detect and mitigate certain types of attacks, including Cross-Site Scripting (XSS) and data injection attacks.</p>",
+          "instances": [
+            {
+              "uri": "https://example-corp.ai-asaas.com/",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": ""
+            },
+            {
+              "uri": "https://example-corp.ai-asaas.com/dashboard",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": ""
+            }
+          ],
+          "count": "2",
+          "solution": "<p>Ensure that your web server or reverse proxy is configured to return the Content-Security-Policy HTTP response header with strict directives such as default-src 'self'.</p>",
+          "otherinfo": "",
+          "reference": "<p>https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP</p><p>https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html</p>",
+          "cweid": "693",
+          "wascid": "15",
+          "sourceid": "3"
+        },
+        {
+          "pluginid": "10020",
+          "alertRef": "10020-1",
+          "alert": "Anti-CSRF Tokens Check",
+          "name": "Anti-CSRF Tokens Check",
+          "riskcode": "2",
+          "confidence": "2",
+          "riskdesc": "Medium (Medium)",
+          "desc": "<p>No Anti-CSRF tokens were found in a HTML submission form. An attacker could trick authenticated users into executing unwanted actions.</p>",
+          "instances": [
+            {
+              "uri": "https://example-corp.ai-asaas.com/settings/profile",
+              "method": "POST",
+              "param": "email",
+              "attack": "",
+              "evidence": "<form action=\"/settings/profile\" method=\"post\">"
+            }
+          ],
+          "count": "1",
+          "solution": "<p>Use unpredictable anti-CSRF tokens for all state-changing POST/PUT/DELETE requests, or use SameSite=Strict cookies with custom authentication headers.</p>",
+          "otherinfo": "",
+          "reference": "<p>https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html</p>",
+          "cweid": "352",
+          "wascid": "9",
+          "sourceid": "3"
+        },
+        {
+          "pluginid": "10035",
+          "alertRef": "10035-1",
+          "alert": "Strict-Transport-Security Header Not Set",
+          "name": "Strict-Transport-Security Header Not Set",
+          "riskcode": "1",
+          "confidence": "3",
+          "riskdesc": "Low (High)",
+          "desc": "<p>HTTP Strict Transport Security (HSTS) header is missing. Without HSTS, connections might be downgraded from HTTPS to unencrypted HTTP by an on-path attacker.</p>",
+          "instances": [
+            {
+              "uri": "https://example-corp.ai-asaas.com/",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": ""
+            }
+          ],
+          "count": "1",
+          "solution": "<p>Configure the server to send Strict-Transport-Security: max-age=31536000; includeSubDomains; preload on all HTTPS responses.</p>",
+          "otherinfo": "",
+          "reference": "<p>https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html</p>",
+          "cweid": "319",
+          "wascid": "15",
+          "sourceid": "3"
+        },
+        {
+          "pluginid": "10096",
+          "alertRef": "10096-1",
+          "alert": "Timestamp Disclosure - Unix",
+          "name": "Timestamp Disclosure - Unix",
+          "riskcode": "0",
+          "confidence": "1",
+          "riskdesc": "Informational (Low)",
+          "desc": "<p>A timestamp was disclosed by the application or web server in Unix epoch format.</p>",
+          "instances": [
+            {
+              "uri": "https://example-corp.ai-asaas.com/static/bundle.js",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": "1731062400"
+            }
+          ],
+          "count": "1",
+          "solution": "<p>Manually verify whether this timestamp exposes internal server clock timings or build metadata that should remain confidential.</p>",
+          "otherinfo": "",
+          "reference": "<p>https://cwe.mitre.org/data/definitions/200.html</p>",
+          "cweid": "200",
+          "wascid": "13",
+          "sourceid": "3"
+        }
+      ]
+    }
+  ]
+}
