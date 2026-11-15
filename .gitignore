@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local scan output (the workflow uploads these as artifacts)
+zap-reports/
+zap_report.json
+zap_raw_report.html
+himaak_report.html
+/report.html
+/zap_report.html
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

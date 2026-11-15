@@ -2,256 +2,287 @@
 # -*- coding: utf-8 -*-
 """
 ═════════════════════════════════════════════════════════════════════════
-ASAAS AI - Enterprise Cybersecurity Report Generator
-Strictly compliant with Asaas Visual Identity & Design System (Asaas UI)
-Embeds all Thmanyah Fonts, Logos, Styles, Finding Inspector & Asaas Assistant.
-Zero-dependency, 100% offline standalone HTML report.
+Himaak (حِماك) - Security Report Generator, by ASAAS AI
+Turns an OWASP ZAP JSON report into a standalone, offline HTML report
+(Asaas visual identity, Thmanyah fonts, finding inspector, assistant).
+
+Security note: every value that comes from the ZAP report is untrusted
+(alert text, URIs, evidence, attack payloads). It is escaped before it is
+written into HTML, and the page JavaScript renders it as text only.
 ═════════════════════════════════════════════════════════════════════════
 """
 
 import os
+import re
 import sys
+import html
 import json
 import base64
 import argparse
 from datetime import datetime
+from html.parser import HTMLParser
 
-# -*- coding: utf-8 -*-
-"""
-Cybersecurity Knowledge Base & Metadata
-Maps OWASP ZAP alerts to Modern Standard Arabic titles, OWASP Top 10 (2021),
-CWE IDs, CVSS v3.1 scores & vectors, CIA Triad impact ratings, multi-language
-remediation patches (Nginx, Apache, Python, Node.js, PHP), and verification checklists.
-"""
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cyber_data import CYBER_KNOWLEDGE  # noqa: E402
 
-CYBER_KNOWLEDGE = {
-    "SQL Injection": {
-        "name_ar": "حقن لغة الاستعلامات (SQL Injection)",
-        "owasp": "A03:2021 - Injection",
-        "cwe": "CWE-89",
-        "cvss": "8.6 (High)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-        "category_ar": "حقن الأوامر والبيانات (Injection)",
-        "cia": {"c": "حرج (Critical)", "i": "مرتفع (High)", "a": "متوسط (Medium)"},
-        "remediation_title": "الاستعلامات المجهزة واستخدام الـ ORM",
-        "remediation_code": """# بايثون مع Psycopg2 أو SQLite:
-cursor.execute("SELECT * FROM users WHERE email = %s AND status = %s", (email, status))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-// Node.js مع مكتبة PostgreSQL (pg):
-const query = 'SELECT * FROM users WHERE email = $1 AND status = $2';
-const result = await pool.query(query, [email, status]);
+PRODUCT_NAME_AR = "حِماك"
+PRODUCT_NAME_EN = "Himaak"
 
-// PHP مع PDO Prepared Statements:
-$stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email AND status = :status');
-$stmt->execute(['email' => $email, 'status' => $status]);""",
-        "checklist": [
-            "حظر استخدام الربط النصي (String Concatenation) في كافة استعلامات قواعد البيانات.",
-            "تطبيق مبدأ الصلاحيات الأقل (Least Privilege) لحسابات الربط بقواعد البيانات.",
-            "إجراء فحص أمان الكود الثابت (SAST) والتحقق من سلامة كافة الدوال."
-        ]
-    },
-    "Content Security Policy (CSP) Header Not Set": {
-        "name_ar": "غياب ترويسة سياسة أمان المحتوى (CSP Header Missing)",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-693",
-        "cvss": "6.5 (Medium)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
-        "category_ar": "أخطاء التكوين الأمني (Security Misconfiguration)",
-        "cia": {"c": "متوسط (Medium)", "i": "متوسط (Medium)", "a": "منخفض (Low)"},
-        "remediation_title": "تفعيل ترويسة سياسة أمان المحتوى الصارمة",
-        "remediation_code": """# إعدادات Nginx (في كتلة server):
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
 
-# Node.js مع Express & Helmet:
-app.use(helmet.contentSecurityPolicy({
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", "data:", "https:"],
-    frameAncestors: ["'none'"]
-  }
-}));""",
-        "checklist": [
-            "تقييد مصادر تحميل السكربتات بـ 'self' وتجنب استخدام 'unsafe-eval'.",
-            "حظر تضمين الموقع في إطارات خارجية عبر توجيه frame-ancestors 'none'.",
-            "اختبار الترويسة أولاً عبر وضع Content-Security-Policy-Report-Only قبل التطبيق الصارم."
-        ]
-    },
-    "Strict-Transport-Security Header Not Set": {
-        "name_ar": "غياب ترويسة النقل الصارم الآمن (HSTS Missing)",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-319",
-        "cvss": "3.7 (Low)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-        "category_ar": "فشل التشفير والتكوين (Cryptographic Failures)",
-        "cia": {"c": "متوسط (Medium)", "i": "منخفض (Low)", "a": "محدود (Minimal)"},
-        "remediation_title": "إلزام التشفير الصارم عبر ترويسة HSTS",
-        "remediation_code": """# إعدادات Nginx:
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+# ───────── Safe output helpers ─────────
 
-# التحويل الإجباري من HTTP إلى HTTPS برمز 301:
-server {
-    listen 80;
-    server_name example.com *.example.com;
-    return 301 https://$host$request_uri;
-}""",
-        "checklist": [
-            "التأكد من سريان شهادة SSL/TLS لجميع النطاقات الفرعية.",
-            "تعيين فترة صلاحية لا تقل عن عام كامل (max-age=31536000).",
-            "إدراج النطاق في قائمة HSTS Preload للمتصفحات العالمية."
-        ]
-    },
-    "Anti-CSRF Tokens Check": {
-        "name_ar": "غياب رموز الحماية من تزوير الطلبات (Anti-CSRF Missing)",
-        "owasp": "A01:2021 - Broken Access Control",
-        "cwe": "CWE-352",
-        "cvss": "6.5 (Medium)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:N",
-        "category_ar": "كسر التحكم بالوصول (Broken Access Control)",
-        "cia": {"c": "منخفض (Low)", "i": "مرتفع (High)", "a": "منخفض (Low)"},
-        "remediation_title": "توليد والتحقق من رموز الحماية Anti-CSRF",
-        "remediation_code": """<!-- تضمين رمز الحماية المشفر في جميع النماذج -->
-<input type="hidden" name="csrf_token" value="{{ session.csrf_token }}" />
+def esc(value):
+    """HTML-escape any value for use in element text or a quoted attribute."""
+    return html.escape("" if value is None else str(value), quote=True)
 
-// إرسال الرمز برمجياً في ترويسات Fetch / Axios:
-fetch('/api/v1/update-profile', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-  },
-  body: JSON.stringify(userData)
-});
 
-// تعيين كوكيز الجلسة بخاصية SameSite الصارمة:
-Set-Cookie: session_id=xyz; Secure; HttpOnly; SameSite=Strict; Path=/;""",
-        "checklist": [
-            "ربط رمز CSRF بجلسة المستخدم والتحقق من تطابقه في الخادم مع كل طلب POST/PUT/DELETE.",
-            "ضبط كوكيز الجلسة بخاصية SameSite=Strict و Secure.",
-            "تجنب الاعتماد على طلبات GET لتنفيذ أي عمليات تعديل بيانات أو حذف."
-        ]
-    },
-    "X-Content-Type-Options Header Missing": {
-        "name_ar": "غياب ترويسة نوع المحتوى الصارم (X-Content-Type-Options)",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-16",
-        "cvss": "3.5 (Low)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
-        "category_ar": "أخطاء التكوين الأمني (Security Misconfiguration)",
-        "cia": {"c": "منخفض (Low)", "i": "منخفض (Low)", "a": "محدود (Minimal)"},
-        "remediation_title": "منع تخمين نوع المحتوى MIME-Type",
-        "remediation_code": """# إعدادات Nginx:
-add_header X-Content-Type-Options "nosniff" always;
+class _TextExtractor(HTMLParser):
+    """Collects the text of an HTML fragment, turning block tags into line breaks."""
+    BREAK_TAGS = {"p", "br", "li", "div", "tr", "h1", "h2", "h3", "h4", "h5", "h6"}
 
-# إعدادات Apache (.htaccess):
-<IfModule mod_headers.c>
-  Header always set X-Content-Type-Options "nosniff"
-</IfModule>""",
-        "checklist": [
-            "تفعيل ترويسة nosniff لجميع أنواع الملفات بدون استثناء.",
-            "التأكد من إرسال ترويسة Content-Type السليمة لملفات JavaScript و CSS."
-        ]
-    },
-    "Missing Anti-clickjacking Header": {
-        "name_ar": "غياب ترويسة منع الاختطاف بالنقر (Anti-Clickjacking Missing)",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-1021",
-        "cvss": "4.3 (Medium)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
-        "category_ar": "أخطاء التكوين الأمني (Security Misconfiguration)",
-        "cia": {"c": "منخفض (Low)", "i": "متوسط (Medium)", "a": "محدود (Minimal)"},
-        "remediation_title": "الحماية من الاختطاف بالنقر (Anti-Clickjacking)",
-        "remediation_code": """# Nginx:
-add_header X-Frame-Options "DENY" always;
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
 
-# أو حصر التضمين في نفس النطاق:
-add_header X-Frame-Options "SAMEORIGIN" always;""",
-        "checklist": [
-            "استخدام X-Frame-Options: DENY كخيار أساسي لمنع التضمين تماماً.",
-            "تفعيل توجيه frame-ancestors 'none' داخل ترويسة CSP كطبقة دفاع ثانية."
-        ]
-    },
-    "Server Leaks Version Information via \"Server\" HTTP Response Header Field": {
-        "name_ar": "تسريب معلومات الخادم عبر ترويسة Server",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-200",
-        "cvss": "2.6 (Info)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
-        "category_ar": "كشف معلومات النظام (Information Disclosure)",
-        "cia": {"c": "منخفض (Low)", "i": "محدود (Minimal)", "a": "محدود (Minimal)"},
-        "remediation_title": "حجب معلومات إصدار الخادم ونوع البرمجيات",
-        "remediation_code": """# في ملف nginx.conf داخل كتلة http:
-http {
-    server_tokens off;
-}
+    def handle_starttag(self, tag, attrs):
+        if tag in self.BREAK_TAGS:
+            self.parts.append("\n")
 
-# في خوادم Apache (httpd.conf):
-ServerTokens Prod
-ServerSignature Off""",
-        "checklist": [
-            "تعطيل server_tokens لمنع كشف رقم إصدار Nginx أو Apache.",
-            "إزالة أو تعتيم ترويسات X-Powered-By التابعة لـ PHP أو Express."
-        ]
-    },
-    "Timestamp Disclosure - Unix": {
-        "name_ar": "كشف التوقيت الزمني للخادم (Unix Timestamp Disclosure)",
-        "owasp": "A04:2021 - Insecure Design / Info Disclosure",
-        "cwe": "CWE-200",
-        "cvss": "2.1 (Info)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-        "category_ar": "كشف معلومات النظام (Information Disclosure)",
-        "cia": {"c": "منخفض (Low)", "i": "محدود (Minimal)", "a": "محدود (Minimal)"},
-        "remediation_title": "إزالة الطوابع الزمنية الخام من الاستجابات العامة",
-        "remediation_code": """# بايثون / FastAPI:
-@app.middleware("http")
-async def sanitize_headers(request, call_next):
-    response = await call_next(request)
-    response.headers.pop("X-Timestamp", None)
-    return response""",
-        "checklist": [
-            "مراجعة استجابات الـ API والتأكد من عدم كشف تواريخ بناء البرمجية الداخلية.",
-            "استخدام تواريخ قياسية بصيغة ISO-8601 عند الحاجة لتبادل التواريخ."
-        ]
-    },
-    "Cross Site Scripting (Reflected)": {
-        "name_ar": "هجمات البرمجة عبر المواقع المنعكسة (Reflected XSS)",
-        "owasp": "A03:2021 - Injection",
-        "cwe": "CWE-79",
-        "cvss": "7.1 (High)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
-        "category_ar": "حقن الأوامر والبيانات (Injection)",
-        "cia": {"c": "متوسط (Medium)", "i": "مرتفع (High)", "a": "منخفض (Low)"},
-        "remediation_title": "الترميز الآمن للمخرجات واستخدام محركات القوالب الآمنة",
-        "remediation_code": """# في جافاسكريبت / React / Vue:
-// تجنب استخدام dangerouslySetInnerHTML أو innerHTML
-element.textContent = sanitizeUserInput(input);
+    def handle_endtag(self, tag):
+        if tag in self.BREAK_TAGS:
+            self.parts.append("\n")
 
-# في بايثون / Jinja2:
-{{ user_input | e }}  {# التشفير التلقائي لمخرجات HTML #}""",
-        "checklist": [
-            "الاعتماد على الترميز السياقي لكافة المدخلات المنعكسة (Contextual Encoding).",
-            "تفعيل ترويسة Content-Security-Policy مع منع unsafe-inline.",
-            "حظر استخدام eval() أو innerHTML مع بيانات المستخدم."
-        ]
-    },
-    "Cookie No HttpOnly Flag": {
-        "name_ar": "ملف تعريف ارتباط يفتقر إلى حماية HttpOnly",
-        "owasp": "A05:2021 - Security Misconfiguration",
-        "cwe": "CWE-1004",
-        "cvss": "5.3 (Medium)",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
-        "category_ar": "إدارة الجلسات والكوكيز (Session Management)",
-        "cia": {"c": "مرتفع (High)", "i": "منخفض (Low)", "a": "محدود (Minimal)"},
-        "remediation_title": "إلزام حماية HttpOnly لكوكيز الجلسة",
-        "remediation_code": """# في ترويسات الاستجابة:
-Set-Cookie: session_id=abc123xyz; Secure; HttpOnly; SameSite=Strict; Path=/;""",
-        "checklist": [
-            "منع وصول سكربتات المتصفح لكوكيز الجلسة عبر document.cookie.",
-            "إقران السمة بسمات Secure و SameSite=Strict دائماً."
-        ]
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def html_to_text(fragment):
+    """Converts a ZAP HTML fragment (desc, solution, reference) into plain text."""
+    if not fragment:
+        return ""
+    parser = _TextExtractor()
+    try:
+        parser.feed(str(fragment))
+        parser.close()
+        text = "".join(parser.parts)
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", str(fragment))
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def safe_url(url):
+    """Returns the URL only when it is http(s); anything else becomes '#'."""
+    url = (url or "").strip()
+    return url if re.match(r"^https?://", url, re.IGNORECASE) else "#"
+
+
+def json_for_script(obj):
+    """Serialises data for a <script> block so it can never close the tag or open HTML."""
+    return (json.dumps(obj, ensure_ascii=False)
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+            .replace(" ", "\\u2028")
+            .replace(" ", "\\u2029"))
+
+
+# ───────── Safe rendering helpers shared by the report and the dashboard ─────────
+# Scan data is only ever written with textContent / DOM nodes, never innerHTML.
+SAFE_RENDER_JS = r"""
+    function escapeHtml(value) {
+      return String(value === undefined || value === null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
+
+    // Converts an HTML fragment (as found in raw ZAP JSON) to plain text.
+    // DOMParser documents are inert: scripts do not run and images do not load.
+    function htmlToText(value) {
+      if (!value) return '';
+      const marked = String(value).replace(/<\s*(br|\/p|\/li|\/div|\/h[1-6])\s*\/?>/gi, '$&\n');
+      const doc = new DOMParser().parseFromString(marked, 'text/html');
+      return (doc.body.textContent || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function setPlainText(el, text, fallback) {
+      if (!el) return;
+      el.textContent = text || fallback || '-';
+      el.style.whiteSpace = 'pre-line';
+    }
+
+    function safeHttpUrl(url) {
+      const raw = String(url || '').trim();
+      if (!/^https?:\/\//i.test(raw)) return null;
+      try { return new URL(raw).href; } catch (e) { return null; }
+    }
+
+    function renderReferences(el, text, fallback) {
+      if (!el) return;
+      el.textContent = '';
+      const found = (String(text || '').match(/https?:\/\/[^\s<>"']+/g) || [])
+        .map(u => u.replace(/[.,);\]]+$/, ''));
+      const urls = Array.from(new Set(found)).map(safeHttpUrl).filter(Boolean);
+      if (!urls.length) { setPlainText(el, text, fallback); return; }
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingInlineStart = '20px';
+      urls.forEach(u => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = u;
+        a.textContent = u;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        li.appendChild(a);
+        ul.appendChild(li);
+      });
+      el.appendChild(ul);
+    }
+
+    function renderTextList(el, items) {
+      if (!el) return;
+      el.textContent = '';
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingInlineStart = '20px';
+      (items || []).forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = String(item);
+        ul.appendChild(li);
+      });
+      el.appendChild(ul);
+    }
+
+    function buildInstanceCard(inst, i) {
+      const card = document.createElement('div');
+      card.className = 'instance-card';
+      const head = document.createElement('div');
+      head.className = 'instance-card__header';
+      const pill = document.createElement('span');
+      pill.className = 'pill pill--tag';
+      pill.textContent = '#' + (i + 1) + ' - Method: ' + (inst.method || 'GET');
+      const uri = document.createElement('span');
+      uri.className = 'instance-uri';
+      uri.textContent = inst.uri || '-';
+      head.appendChild(pill);
+      head.appendChild(uri);
+      card.appendChild(head);
+
+      const addRow = (label, value, boxed) => {
+        if (!value) return;
+        const row = document.createElement('div');
+        row.style.fontSize = '13px';
+        if (boxed) row.style.marginTop = '4px';
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        row.appendChild(strong);
+        row.appendChild(document.createTextNode(' '));
+        const code = document.createElement('code');
+        code.textContent = String(value);
+        if (boxed) {
+          const box = document.createElement('div');
+          box.className = 'evidence-box';
+          box.appendChild(code);
+          row.appendChild(box);
+        } else {
+          row.appendChild(code);
+        }
+        card.appendChild(row);
+      };
+      addRow('المعامل المتأثر (Parameter):', inst.param, false);
+      addRow('حمولة الهجوم (Payload):', inst.attack, false);
+      addRow('الدليل المكتشف (Evidence):', inst.evidence, true);
+      return card;
+    }
+"""
+
+
+# ───────── Scoring & release policy (single source of truth) ─────────
+# The same rules are mirrored in the page JavaScript (assessRelease) of index.html.
+SCORE_WEIGHTS = {"high": 25, "med": 10, "low": 3}
+
+RISK_LABELS = {
+    3: {"en": "High Risk", "ar": "عالي الخطورة", "badge": "pill--high", "impact": "عالي جداً (Critical Impact)"},
+    2: {"en": "Medium Risk", "ar": "متوسط الخطورة", "badge": "pill--medium", "impact": "متوسط (Moderate Impact)"},
+    1: {"en": "Low Risk", "ar": "منخفض الخطورة", "badge": "pill--low", "impact": "محدود (Low Impact)"},
+    0: {"en": "Informational", "ar": "معلوماتي", "badge": "pill--info", "impact": "توثيقي (Informational)"},
 }
+
+
+def compute_score(high, med, low):
+    deduction = high * SCORE_WEIGHTS["high"] + med * SCORE_WEIGHTS["med"] + low * SCORE_WEIGHTS["low"]
+    return max(0, min(100, 100 - deduction))
+
+
+def assess_release(high, med, low):
+    """Score, health status and release decision.
+
+    Release policy:
+      - blocked     : any high-risk finding, or a score below 50
+      - conditional : no high-risk findings, but at least one medium (fix within 14 days)
+      - approved    : only low / informational findings
+    """
+    score = compute_score(high, med, low)
+
+    if score >= 90:
+        grade, status_ar, status_en, status_color = "A+", "ممتاز / آمن", "Secure / Excellent", "var(--paid)"
+    elif score >= 75:
+        grade, status_ar, status_en, status_color = "B", "جيد / يتطلب معالجة طفيفة", "Moderate / Minor Issues", "var(--brand-gold)"
+    elif score >= 50:
+        grade, status_ar, status_en, status_color = "C", "متوسط / مخاطر محتملة", "Warning / Action Required", "var(--partial)"
+    else:
+        grade, status_ar, status_en, status_color = "F", "حرج / يتطلب تدخلاً عاجلاً", "Critical / Urgent Action Needed", "var(--unpaid)"
+
+    if high > 0 or score < 50:
+        reason_ar = ("تم رصد ثغرات عالية الخطورة تهدد سلامة النظام." if high > 0
+                     else "تراكمت ملاحظات متوسطة الخطورة حتى انخفض مؤشر السلامة دون 50.")
+        reason_en = ("High-risk vulnerabilities were detected." if high > 0
+                     else "Accumulated medium-risk findings pushed the health score below 50.")
+        release = {
+            "release_status": "blocked",
+            "release_title_ar": "حظر الإطلاق للإنتاج (Release Blocked)",
+            "release_title_en": "Production Release Blocked (P1 Blocker)",
+            "release_desc_ar": reason_ar + " يُمنع النشر للإنتاج حتى اكتمال المعالجة وإعادة الفحص.",
+            "release_desc_en": reason_en + " Production release is blocked until remediation and a clean re-scan.",
+            "release_pill_ar": "محظور من النشر (Blocked)",
+            "release_pill_en": "RELEASE BLOCKED",
+            "release_color": "var(--unpaid)",
+            "release_sla_ar": "فوري قبل النشر",
+            "release_sla_en": "Immediate before deploy",
+        }
+    elif med > 0:
+        release = {
+            "release_status": "conditional",
+            "release_title_ar": "إطلاق مشروط (Conditional Release)",
+            "release_title_en": "Conditional Release (Grace Period)",
+            "release_desc_ar": "لا توجد ثغرات عالية الخطورة، ولكن يلزم جدولة معالجة الثغرات المتوسطة خلال 14 يوماً.",
+            "release_desc_en": "No high-risk blockers. Medium findings must be remediated within 14 calendar days.",
+            "release_pill_ar": "إطلاق مشروط (Conditional)",
+            "release_pill_en": "CONDITIONAL APPROVAL",
+            "release_color": "var(--partial)",
+            "release_sla_ar": "14 يوماً تقويمياً",
+            "release_sla_en": "14 Calendar Days",
+        }
+    else:
+        release = {
+            "release_status": "approved",
+            "release_title_ar": "معتمد للإطلاق والإنتاج (Approved for Production)",
+            "release_title_en": "Approved for Production",
+            "release_desc_ar": "لا توجد ثغرات عالية أو متوسطة الخطورة، ولا توجد موانع للنشر.",
+            "release_desc_en": "No high or medium risk findings. No release blockers.",
+            "release_pill_ar": "ممتثل (Compliant)",
+            "release_pill_en": "COMPLIANT",
+            "release_color": "var(--paid)",
+            "release_sla_ar": "مستوفٍ للمعايير",
+            "release_sla_en": "Compliant",
+        }
+
+    return {"score": score, "grade": grade, "status_ar": status_ar, "status_en": status_en,
+            "status_color": status_color, **release}
 
 
 def load_file_b64(filepath):
@@ -268,210 +299,149 @@ def load_text_file(filepath):
             return f.read()
     return ""
 
-def parse_zap_json(json_path):
-    """Parses OWASP ZAP json report and enriches alerts with professional cybersecurity metadata."""
-    if not os.path.exists(json_path):
-        raise FileNotFoundError(f"ZAP report file not found at: {json_path}")
-    
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        
-    zap_version = data.get("@version", "OWASP ZAP 2.x")
-    generated_at = data.get("@generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    
-    raw_sites = data.get("site", [])
-    if isinstance(raw_sites, dict):
-        raw_sites = [raw_sites]
-        
+def _as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _as_int(value, default=0):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def extract_urls(text):
+    """Returns the distinct http(s) URLs found in a block of text, in order."""
+    seen, urls = set(), []
+    for url in re.findall(r"https?://[^\s<>\"']+", text or ""):
+        url = url.rstrip(".,);]")
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def enrich_alert(a):
+    """Normalises one raw ZAP alert and adds the knowledge-base metadata.
+
+    ZAP's desc/solution/reference/otherinfo fields are HTML fragments. They are
+    converted to plain text here so the report never renders scanner-supplied HTML.
+    """
+    risk_code = _as_int(a.get("riskcode"), 0)
+    if risk_code not in RISK_LABELS:
+        risk_code = 0
+    risk_meta = RISK_LABELS[risk_code]
+
+    instances = []
+    for inst in _as_list(a.get("instances")):
+        if not isinstance(inst, dict):
+            continue
+        instances.append({
+            "uri": str(inst.get("uri", "") or ""),
+            "method": str(inst.get("method", "GET") or "GET"),
+            "param": str(inst.get("param", "") or ""),
+            "attack": str(inst.get("attack", "") or ""),
+            "evidence": str(inst.get("evidence", "") or ""),
+        })
+
+    alert_name = str(a.get("name") or a.get("alert") or "Unknown Issue")
+    knowledge = CYBER_KNOWLEDGE.get(alert_name, {})
+    default_cvss = {3: "8.5", 2: "6.0", 1: "3.5"}.get(risk_code, "2.0")
+    default_cia = {
+        "c": "مرتفع (High)" if risk_code == 3 else "متوسط (Medium)" if risk_code == 2 else "منخفض (Low)",
+        "i": "مرتفع (High)" if risk_code == 3 else "متوسط (Medium)" if risk_code == 2 else "منخفض (Low)",
+        "a": "متوسط (Medium)" if risk_code == 3 else "منخفض (Low)" if risk_code == 2 else "محدود (Minimal)",
+    }
+    cwe_raw = str(a.get("cweid") or knowledge.get("cwe", "")).replace("CWE-", "").strip()
+    reference_text = html_to_text(a.get("reference", ""))
+
+    return {
+        "id": str(a.get("pluginid", "0") or "0"),
+        "name": alert_name,
+        "name_ar": knowledge.get("name_ar", alert_name),
+        "owasp": knowledge.get("owasp", "OWASP General Web Security"),
+        "cweid": cwe_raw if cwe_raw.isdigit() else "",
+        "cvss": knowledge.get("cvss", default_cvss),
+        "cvss_vector": knowledge.get("cvss_vector", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U"),
+        "category_ar": knowledge.get("category_ar", "فحص الثغرات العامة"),
+        "cia": knowledge.get("cia", default_cia),
+        "riskcode": risk_code,
+        "risk_en": risk_meta["en"],
+        "risk_ar": risk_meta["ar"],
+        "badge_class": risk_meta["badge"],
+        "impact_label": risk_meta["impact"],
+        "confidence": str(a.get("confidence", "2")),
+        "riskdesc": str(a.get("riskdesc", "") or ""),
+        "desc": html_to_text(a.get("desc", "")),
+        "solution": html_to_text(a.get("solution", "")),
+        "otherinfo": html_to_text(a.get("otherinfo", "")),
+        "reference": reference_text,
+        "reference_urls": extract_urls(reference_text),
+        "wascid": str(a.get("wascid", "") or ""),
+        "count": _as_int(a.get("count"), len(instances)) or len(instances),
+        "instances": instances,
+        "remediation_title": knowledge.get("remediation_title", "إجراءات الترقيع الأمني المعتمدة"),
+        "remediation_code": knowledge.get("remediation_code", "# مراجعة وتعديل الكود المصدري وفق معايير OWASP"),
+        "checklist": knowledge.get("checklist", [
+            "إجراء فحص الكود المصدري (Static Code Review) للتحقق من إغلاق الموضع المصاب.",
+            "إعادة تشغيل فحص OWASP ZAP والتأكد من اختفاء التنبيه تماماً.",
+            "تحديث إعدادات الخوادم أو جدران الحماية (WAF) وتفعيل الحظر الاستباقي.",
+        ]),
+    }
+
+
+def summarize_report(data):
+    """Turns a parsed ZAP JSON document into the data the report template needs."""
+    zap_version = str(data.get("@version", "OWASP ZAP 2.x"))
+    generated_at = str(data.get("@generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
     all_alerts = []
-    target_urls = set()
-    
-    for site in raw_sites:
-        site_name = site.get("@name", "")
-        if site_name:
-            target_urls.add(site_name)
-        alerts = site.get("alerts", [])
-        if isinstance(alerts, dict):
-            alerts = [alerts]
-            
-        for a in alerts:
-            risk_code = int(a.get("riskcode", 0))
-            # 3 = High, 2 = Medium, 1 = Low, 0 = Informational
-            risk_labels = {
-                3: {"en": "High Risk", "ar": "عالي الخطورة", "color": "unpaid", "badge": "pill--high", "impact": "عالي جداً (Critical Impact)"},
-                2: {"en": "Medium Risk", "ar": "متوسط الخطورة", "color": "partial", "badge": "pill--medium", "impact": "متوسط (Moderate Impact)"},
-                1: {"en": "Low Risk", "ar": "منخفض الخطورة", "color": "paid", "badge": "pill--low", "impact": "محدود (Low Impact)"},
-                0: {"en": "Informational", "ar": "معلوماتي", "color": "info", "badge": "pill--info", "impact": "توثيقي (Informational)"}
-            }
-            risk_meta = risk_labels.get(risk_code, risk_labels[0])
-            
-            raw_instances = a.get("instances", [])
-            if isinstance(raw_instances, dict):
-                raw_instances = [raw_instances]
-                
-            instances = []
-            for inst in raw_instances:
-                instances.append({
-                    "uri": inst.get("uri", ""),
-                    "method": inst.get("method", "GET"),
-                    "param": inst.get("param", ""),
-                    "attack": inst.get("attack", ""),
-                    "evidence": inst.get("evidence", "")
-                })
-                
-            alert_name = a.get("name", a.get("alert", "Unknown Issue"))
-            knowledge = CYBER_KNOWLEDGE.get(alert_name, {})
-            ar_name = knowledge.get("name_ar", alert_name)
-            owasp_cat = knowledge.get("owasp", "OWASP General Web Security")
-            cwe_id = a.get("cweid") or knowledge.get("cwe", "").replace("CWE-", "")
-            cvss_val = knowledge.get("cvss", f"{'8.5' if risk_code==3 else '6.0' if risk_code==2 else '3.5' if risk_code==1 else '2.0'}")
-            cvss_vec = knowledge.get("cvss_vector", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U")
-            category_ar = knowledge.get("category_ar", "فحص الثغرات العامة")
-            cia_info = knowledge.get("cia", {
-                "c": "مرتفع (High)" if risk_code==3 else "متوسط (Medium)" if risk_code==2 else "منخفض (Low)",
-                "i": "مرتفع (High)" if risk_code==3 else "متوسط (Medium)" if risk_code==2 else "منخفض (Low)",
-                "a": "متوسط (Medium)" if risk_code==3 else "منخفض (Low)" if risk_code==2 else "محدود (Minimal)"
-            })
-            remed_title = knowledge.get("remediation_title", "إجراءات الترقيع الأمني المعتمدة")
-            remed_code = knowledge.get("remediation_code", "# مراجعة وتعديل الكود المصدري وفق معايير OWASP")
-            checklist = knowledge.get("checklist", [
-                "إجراء فحص الكود المصدري (Static Code Review) للتحقق من إغلاق الموضع المصاب.",
-                "إعادة تشغيل فحص OWASP ZAP والتأكد من اختفاء التنبيه تماماً.",
-                "تحديث إعدادات الخوادم أو جدران الحماية (WAF) وتفعيل الحظر الاستباقي."
-            ])
-            
-            all_alerts.append({
-                "id": a.get("pluginid", "0"),
-                "name": alert_name,
-                "name_ar": ar_name,
-                "owasp": owasp_cat,
-                "cweid": cwe_id,
-                "cvss": cvss_val,
-                "cvss_vector": cvss_vec,
-                "category_ar": category_ar,
-                "cia": cia_info,
-                "riskcode": risk_code,
-                "risk_en": risk_meta["en"],
-                "risk_ar": risk_meta["ar"],
-                "badge_class": risk_meta["badge"],
-                "impact_label": risk_meta["impact"],
-                "confidence": a.get("confidence", "2"),
-                "riskdesc": a.get("riskdesc", ""),
-                "desc": a.get("desc", ""),
-                "solution": a.get("solution", ""),
-                "otherinfo": a.get("otherinfo", ""),
-                "reference": a.get("reference", ""),
-                "wascid": a.get("wascid", ""),
-                "count": int(a.get("count", len(instances))),
-                "instances": instances,
-                "remediation_title": remed_title,
-                "remediation_code": remed_code,
-                "checklist": checklist
-            })
-            
-    # Sort alerts by risk code descending (High -> Med -> Low -> Info)
+    target_urls = []
+    for site in _as_list(data.get("site")):
+        if not isinstance(site, dict):
+            continue
+        site_name = str(site.get("@name", "") or "")
+        if site_name and site_name not in target_urls:
+            target_urls.append(site_name)
+        for a in _as_list(site.get("alerts")):
+            if isinstance(a, dict):
+                all_alerts.append(enrich_alert(a))
+
+    # High -> Medium -> Low -> Info
     all_alerts.sort(key=lambda x: x["riskcode"], reverse=True)
-    
-    # Calculate stats
+
     high_count = sum(1 for a in all_alerts if a["riskcode"] == 3)
     med_count = sum(1 for a in all_alerts if a["riskcode"] == 2)
     low_count = sum(1 for a in all_alerts if a["riskcode"] == 1)
     info_count = sum(1 for a in all_alerts if a["riskcode"] == 0)
-    total_alerts = len(all_alerts)
-    total_instances = sum(a["count"] for a in all_alerts)
-    
-    # Security Score (0 to 100)
-    deduction = (high_count * 25) + (med_count * 10) + (low_count * 3)
-    score = max(0, min(100, 100 - deduction))
-    
-    if score >= 90:
-        grade = "A+"
-        status_ar = "ممتاز / آمن"
-        status_en = "Secure / Excellent"
-        status_color = "var(--paid)"
-        release_status = "approved"
-        release_title_ar = "معتمد للإطلاق والإنتاج (Approved for Production)"
-        release_title_en = "Approved for Production (Clean & Certified)"
-        release_desc_ar = "اجتاز النظام كافة متطلبات التحقق الأمني المعتمدة لدى شركة أساس، ولا توجد موانع للنشر."
-        release_desc_en = "The target passed all security quality gates according to OWASP & Asaas baseline standards. No blockers."
-        release_pill_ar = "ممتثل بالكامل (Compliant)"
-        release_pill_en = "FULLY COMPLIANT"
-        release_color = "var(--paid)"
-        release_sla_ar = "مستوفٍ لكافة المعايير"
-        release_sla_en = "Fully Compliant"
-    elif score >= 75 and high_count == 0:
-        grade = "B"
-        status_ar = "جيد / يتطلب معالجة طفيفة"
-        status_en = "Moderate / Minor Issues"
-        status_color = "var(--brand-gold)"
-        release_status = "conditional"
-        release_title_ar = "إطلاق مشروط (Conditional Release)"
-        release_title_en = "Conditional Release (Grace Period)"
-        release_desc_ar = "لا توجد ثغرات حرجة تمنع التشغيل، ولكن يلزم جدولة معالجة الثغرات المتوسطة خلال أسبوعين."
-        release_desc_en = "No critical blockers found. Medium findings must be scheduled for remediation within 14 calendar days."
-        release_pill_ar = "إطلاق مشروط (Conditional)"
-        release_pill_en = "CONDITIONAL APPROVAL"
-        release_color = "var(--partial)"
-        release_sla_ar = "14 يوماً تقويمياً"
-        release_sla_en = "14 Calendar Days"
-    elif score >= 50:
-        grade = "C"
-        status_ar = "متوسط / مخاطر محتملة"
-        status_en = "Warning / Action Required"
-        status_color = "var(--partial)"
-        release_status = "blocked"
-        release_title_ar = "حظر الإطلاق للإنتاج (Release Blocked)"
-        release_title_en = "Production Release Blocked (P1 Blocker)"
-        release_desc_ar = "تم رصد ثغرات أمنية عالية أو متوسطة الخطورة تهدد سلامة النظام. يُمنع النشر للإنتاج حتى اكتمال المعالجة."
-        release_desc_en = "High or medium risk vulnerabilities detected. Production release is strictly blocked until full remediation."
-        release_pill_ar = "محظور من النشر (Blocked)"
-        release_pill_en = "RELEASE BLOCKED"
-        release_color = "var(--unpaid)"
-        release_sla_ar = "فوري قبل النشر"
-        release_sla_en = "Immediate before deploy"
-    else:
-        grade = "F"
-        status_ar = "حرج / يتطلب تدخلاً عاجلاً"
-        status_en = "Critical / Urgent Action Needed"
-        status_color = "var(--unpaid)"
-        release_status = "blocked"
-        release_title_ar = "حظر الإطلاق للإنتاج (Release Blocked)"
-        release_title_en = "Production Release Blocked (P1 Blocker)"
-        release_desc_ar = "تم رصد ثغرات أمنية حرجة تستوجب تدخلاً فورياً وإيقاف أي عملية نشر بالإنتاج."
-        release_desc_en = "Critical vulnerabilities detected requiring immediate remediation. Release strictly blocked."
-        release_pill_ar = "محظور من النشر (Blocked)"
-        release_pill_en = "RELEASE BLOCKED"
-        release_color = "var(--unpaid)"
-        release_sla_ar = "فوري قبل النشر"
-        release_sla_en = "Immediate before deploy"
 
     return {
         "zap_version": zap_version,
         "generated_at": generated_at,
-        "target_url": ", ".join(target_urls) if target_urls else "https://target-system.ai-asaas.com",
+        "target_url": ", ".join(target_urls) if target_urls else "",
+        "target_href": safe_url(target_urls[0]) if target_urls else "#",
         "alerts": all_alerts,
         "high_count": high_count,
         "med_count": med_count,
         "low_count": low_count,
         "info_count": info_count,
-        "total_alerts": total_alerts,
-        "total_instances": total_instances,
-        "score": score,
-        "grade": grade,
-        "status_ar": status_ar,
-        "status_en": status_en,
-        "status_color": status_color,
-        "release_status": release_status,
-        "release_title_ar": release_title_ar,
-        "release_title_en": release_title_en,
-        "release_desc_ar": release_desc_ar,
-        "release_desc_en": release_desc_en,
-        "release_pill_ar": release_pill_ar,
-        "release_pill_en": release_pill_en,
-        "release_sla_ar": release_sla_ar,
-        "release_sla_en": release_sla_en,
-        "release_color": release_color
+        "total_alerts": len(all_alerts),
+        "total_instances": sum(a["count"] for a in all_alerts),
+        **assess_release(high_count, med_count, low_count),
     }
+
+
+def parse_zap_json(json_path):
+    """Parses an OWASP ZAP JSON report file and enriches its alerts."""
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"ZAP report file not found at: {json_path}")
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected ZAP report format: top-level JSON object expected.")
+    return summarize_report(data)
 
 def get_inlined_brand_css(project_root):
     """Loads all CSS and embeds Base64 Thmanyah fonts and logos for zero-dependency rendering."""
@@ -558,7 +528,7 @@ def get_assistant_assets_b64(project_root):
     }
 
 def generate_html_report(data, output_path, project_root):
-    """Generates the standalone Asaas Brand-Compliant HTML Report."""
+    """Generates the standalone Himaak HTML report (Asaas visual identity)."""
     assets_dir = os.path.join(project_root, "assets")
     images_dir = os.path.join(assets_dir, "images")
     favicon_b64 = load_file_b64(os.path.join(images_dir, "favicon.png"))
@@ -568,31 +538,36 @@ def generate_html_report(data, output_path, project_root):
     
     circumference = 251.32
     dash_offset = circumference - (circumference * data["score"] / 100)
-    
-    # Pre-render findings cards
+
+    # Escaped copy of every scalar value, for use inside the HTML template.
+    e = {k: esc(v) for k, v in data.items() if not isinstance(v, (list, dict))}
+    e["target_url"] = esc(data["target_url"] or "—")
+
+    # Pre-render findings cards (all alert text is escaped: it comes from the scanned target)
     findings_html_list = []
     for idx, alert in enumerate(data["alerts"]):
-        cwe_tag = f'<span class="pill pill--tag">CWE-{alert["cweid"]}</span>' if alert["cweid"] else ''
-        owasp_tag = f'<span class="pill pill--tag hide-mobile">{alert["owasp"]}</span>' if alert.get("owasp") else ''
-        
+        a = {k: esc(v) for k, v in alert.items() if not isinstance(v, (list, dict))}
+        cwe_tag = f'<span class="pill pill--tag">CWE-{a["cweid"]}</span>' if alert["cweid"] else ''
+        owasp_tag = f'<span class="pill pill--tag hide-mobile">{a["owasp"]}</span>' if alert.get("owasp") else ''
+
         findings_html_list.append(f"""
-        <div class="finding-card glass" data-index="{idx}" data-risk="{alert['riskcode']}" data-search="{alert['name']} {alert['name_ar']} {alert['cweid']} {alert['id']} {alert.get('owasp', '')}">
+        <div class="finding-card glass" data-index="{idx}" data-risk="{a['riskcode']}" data-search="{a['name']} {a['name_ar']} {a['cweid']} {a['id']} {a['owasp']}">
           <div class="finding-header" onclick="openModalByIndex({idx})">
             <div class="finding-title-group">
-              <span class="pill {alert['badge_class']}">
-                <span data-ar="{alert['risk_ar']}" data-en="{alert['risk_en']}">{alert['risk_ar']}</span>
+              <span class="pill {a['badge_class']}">
+                <span data-ar="{a['risk_ar']}" data-en="{a['risk_en']}">{a['risk_ar']}</span>
               </span>
-              <div class="finding-name" title="{alert['name']}">
-                <span class="title-primary" data-ar="{alert['name_ar']}" data-en="{alert['name']}">{alert['name_ar']}</span>
-                <span class="title-secondary subtle hide-mobile" data-ar="({alert['name']})" data-en="({alert['name_ar']})" style="font-size: 13px; margin-inline-start: 6px;">({alert['name']})</span>
+              <div class="finding-name" title="{a['name']}">
+                <span class="title-primary" data-ar="{a['name_ar']}" data-en="{a['name']}">{a['name_ar']}</span>
+                <span class="title-secondary subtle hide-mobile" data-ar="({a['name']})" data-en="({a['name_ar']})" style="font-size: 13px; margin-inline-start: 6px;">({a['name']})</span>
               </div>
             </div>
             <div class="finding-meta">
-              <span class="pill pill--tag"><span class="num">{alert['count']}</span> <span data-ar="حالة" data-en="instances">حالة</span></span>
+              <span class="pill pill--tag"><span class="num">{a['count']}</span> <span data-ar="حالة" data-en="instances">حالة</span></span>
               {owasp_tag}
               {cwe_tag}
               <button class="finding-action-btn" onclick="event.stopPropagation(); openModalByIndex({idx})">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><circle cx="12" cy="12" r="3"/><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7Z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><circle cx="12" cy="12" r="3"/><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7S2.5 12 2.5 12Z"/></svg>
                 <span data-ar="معاينة التقرير والتفاصيل" data-en="Inspect Finding Details">معاينة التقرير والتفاصيل</span>
               </button>
             </div>
@@ -610,7 +585,18 @@ def generate_html_report(data, output_path, project_root):
     </div>
     """
 
-    alerts_json_safe = json.dumps(data["alerts"]).replace("</script>", "<\\/script>")
+    alerts_json_safe = json_for_script(data["alerts"])
+    metrics_json_safe = json_for_script({
+        "score": data["score"],
+        "high": data["high_count"],
+        "med": data["med_count"],
+        "low": data["low_count"],
+        "info": data["info_count"],
+        "target": data["target_url"],
+        "statusAr": data["status_ar"],
+        "statusEn": data["status_en"],
+        "releaseStatus": data["release_status"],
+    })
 
     release_icon = "⛔" if data["release_status"] == "blocked" else "⚠️" if data["release_status"] == "conditional" else "✅"
 
@@ -619,7 +605,7 @@ def generate_html_report(data, output_path, project_root):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>تقرير الفحص الأمني المعتمد | شركة أساس للذكاء الاصطناعي</title>
+  <title>حِماك | تقرير الفحص الأمني المعتمد</title>
   <link rel="icon" type="image/png" href="data:image/png;base64,{favicon_b64}">
   <style>
     {inlined_css}
@@ -654,9 +640,9 @@ def generate_html_report(data, output_path, project_root):
   <header class="app-header glass glass--thick">
     <div class="container app-header__inner">
       <div class="brand">
-        <div class="brand__mark" aria-label="شعار شركة أساس"></div>
+        <div class="brand__mark" aria-label="شعار حماك"></div>
         <div>
-          <div class="brand__name"><span class="swash">أسَــاس</span> <span class="hide-mobile" style="font-size: 15px; font-weight: 500; color: var(--accent);">للأمن السيبراني</span></div>
+          <div class="brand__name"><span class="swash">حِمَــاك</span> <span class="hide-mobile" style="font-size: 15px; font-weight: 500; color: var(--accent);">من أساس</span></div>
           <div class="brand__tag hide-mobile" data-ar="منظومة أتمتة الفحص الأمني المتقدم" data-en="Automated Security Assessment System">منظومة أتمتة الفحص الأمني المتقدم</div>
         </div>
       </div>
@@ -692,29 +678,16 @@ def generate_html_report(data, output_path, project_root):
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         <div>
           <span class="subtle" data-ar="الهدف المفحوص:" data-en="Target System:">الهدف المفحوص:</span>
-          <a href="{data['target_url']}" id="displayTargetUrl" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: underline;">{data['target_url']}</a>
+          <a href="{esc(data['target_href'])}" id="displayTargetUrl" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: underline;">{e['target_url']}</a>
         </div>
       </div>
 
       <div class="target-badge">
-        <span class="pill pill--tag">Engine: {data['zap_version']}</span>
-        <span class="pill pill--tag"><span class="num">{data['generated_at']}</span></span>
+        <span class="pill pill--tag">Engine: {e['zap_version']}</span>
+        <span class="pill pill--tag"><span class="num">{e['generated_at']}</span></span>
       </div>
     </div>
 
-    <!-- Interactive Client-side JSON Upload Dropzone -->
-    <div class="dropzone" id="reportDropzone" onclick="document.getElementById('reportDropzoneInput').click()" style="margin-top: 16px;">
-      <input type="file" id="reportDropzoneInput" accept=".json" style="display: none;" onchange="handleReportDrop(event)">
-      <div class="dropzone__icon">
-        <svg viewBox="0 0 24 24" width="22" height="22" style="width: 22px; height: 22px;" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
-        </svg>
-      </div>
-      <div>
-        <strong style="font-size: 14.5px; color: var(--text);" data-ar="اسحب وأفلت تقرير zap_report.json هنا لتحديث الصفحة فورياً" data-en="Drag & drop zap_report.json here for instant client-side update">اسحب وأفلت تقرير zap_report.json هنا لتحديث الصفحة فورياً</strong>
-        <p class="subtle" style="margin-top: 4px;" data-ar="أو انقر لاختيار الملف من جهازك لتحليله مباشرة في المتصفح وإعادة احتساب نقاط الأمان وبوابة الإطلاق" data-en="or click to browse from device to recalculate security score and release gates">أو انقر لاختيار الملف من جهازك لتحليله مباشرة في المتصفح وإعادة احتساب نقاط الأمان وبوابة الإطلاق</p>
-      </div>
-    </div>
 
     <!-- Executive Score & KPIs Grid -->
     <div class="grid grid--halves">
@@ -725,20 +698,20 @@ def generate_html_report(data, output_path, project_root):
             <svg viewBox="0 0 96 96">
               <circle class="score-track" cx="48" cy="48" r="40" />
               <circle class="score-fill" id="scoreCircleFill" cx="48" cy="48" r="40" 
-                      stroke="{data['status_color']}" 
+                      stroke="{e['status_color']}" 
                       stroke-dasharray="{circumference}" 
                       stroke-dashoffset="{dash_offset}" />
             </svg>
-            <div class="score-value" style="color: {data['status_color']};">
-              <span class="num">{data['score']}</span>
+            <div class="score-value" style="color: {e['status_color']};">
+              <span class="num">{e['score']}</span>
               <small>/ 100</small>
             </div>
           </div>
           <div class="score-info">
             <div class="score-title" data-ar="مؤشر السلامة الأمنية" data-en="Security Health Score">مؤشر السلامة الأمنية</div>
-            <div class="score-status" style="color: {data['status_color']};">
-              <span class="pill" style="background: var(--glass-inset); border: 1px solid {data['status_color']};">
-                <span data-ar="{data['status_ar']}" data-en="{data['status_en']}">{data['status_ar']}</span>
+            <div class="score-status" style="color: {e['status_color']};">
+              <span class="pill" style="background: var(--glass-inset); border: 1px solid {e['status_color']};">
+                <span data-ar="{e['status_ar']}" data-en="{e['status_en']}">{e['status_ar']}</span>
               </span>
             </div>
             <p class="subtle" data-ar="تقييم الامتثال الأمني وفق منهجية OWASP" data-en="Compliance rating based on OWASP methodology">تقييم الامتثال الأمني وفق منهجية OWASP</p>
@@ -753,7 +726,7 @@ def generate_html_report(data, output_path, project_root):
             <div class="stat__icon" style="color: var(--unpaid);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div>
             <span data-ar="عالية الخطورة" data-en="High Risk">عالية الخطورة</span>
           </div>
-          <div class="stat__value" style="color: var(--unpaid);"><span class="num">{data['high_count']}</span></div>
+          <div class="stat__value" style="color: var(--unpaid);"><span class="num">{e['high_count']}</span></div>
           <div class="stat__foot" data-ar="تتطلب معالجة فورية" data-en="Requires immediate fix">تتطلب معالجة فورية</div>
         </div>
 
@@ -762,7 +735,7 @@ def generate_html_report(data, output_path, project_root):
             <div class="stat__icon" style="color: var(--partial);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4M12 16h.01M3.3 20h17.4a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0L1.6 17a2 2 0 0 0 1.7 3z"/></svg></div>
             <span data-ar="متوسطة الخطورة" data-en="Medium Risk">متوسطة الخطورة</span>
           </div>
-          <div class="stat__value" style="color: var(--partial);"><span class="num">{data['med_count']}</span></div>
+          <div class="stat__value" style="color: var(--partial);"><span class="num">{e['med_count']}</span></div>
           <div class="stat__foot" data-ar="معالجة مجدولة" data-en="Scheduled remediation">معالجة مجدولة</div>
         </div>
 
@@ -771,7 +744,7 @@ def generate_html_report(data, output_path, project_root):
             <div class="stat__icon" style="color: var(--paid);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-5"/></svg></div>
             <span data-ar="منخفضة الخطورة" data-en="Low Risk">منخفضة الخطورة</span>
           </div>
-          <div class="stat__value" style="color: var(--paid);"><span class="num">{data['low_count']}</span></div>
+          <div class="stat__value" style="color: var(--paid);"><span class="num">{e['low_count']}</span></div>
           <div class="stat__foot" data-ar="تحسينات وقائية" data-en="Preventive hardening">تحسينات وقائية</div>
         </div>
 
@@ -780,28 +753,28 @@ def generate_html_report(data, output_path, project_root):
             <div class="stat__icon" style="color: var(--chart-out);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></div>
             <span data-ar="معلوماتية" data-en="Informational">معلوماتية</span>
           </div>
-          <div class="stat__value" style="color: var(--chart-out);"><span class="num">{data['info_count']}</span></div>
+          <div class="stat__value" style="color: var(--chart-out);"><span class="num">{e['info_count']}</span></div>
           <div class="stat__foot" data-ar="ملاحظات توثيقية" data-en="Informational notes">ملاحظات توثيقية</div>
         </div>
       </div>
     </div>
 
     <!-- Executive Release Decision Card -->
-    <div class="card glass release-card" id="releaseDecisionCard" style="margin-top: 14px; border-color: {data['release_color']};">
+    <div class="card glass release-card" id="releaseDecisionCard" style="margin-top: 14px; border-color: {e['release_color']};">
       <div class="release-card__info">
         <div class="release-card__title">
           <span>{release_icon}</span>
-          <span data-ar="{data['release_title_ar']}" data-en="{data['release_title_en']}">{data['release_title_ar']}</span>
+          <span data-ar="{e['release_title_ar']}" data-en="{e['release_title_en']}">{e['release_title_ar']}</span>
         </div>
-        <p class="release-card__desc" data-ar="{data['release_desc_ar']}" data-en="{data['release_desc_en']}">
-          {data['release_desc_ar']}
+        <p class="release-card__desc" data-ar="{e['release_desc_ar']}" data-en="{e['release_desc_en']}">
+          {e['release_desc_ar']}
         </p>
       </div>
       <div class="release-card__meta" style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-        <span class="pill" style="border: 1px solid {data['release_color']}; color: {data['release_color']}; background: var(--glass-inset);" data-ar="{data['release_pill_ar']}" data-en="{data['release_pill_en']}">
-          {data['release_pill_ar']}
+        <span class="pill" style="border: 1px solid {e['release_color']}; color: {e['release_color']}; background: var(--glass-inset);" data-ar="{e['release_pill_ar']}" data-en="{e['release_pill_en']}">
+          {e['release_pill_ar']}
         </span>
-        <span class="subtle" style="font-size: 12px;" data-ar="مهلة الترقيع: {data['release_sla_ar']}" data-en="SLA: {data['release_sla_en']}">مهلة الترقيع: {data['release_sla_ar']}</span>
+        <span class="subtle" style="font-size: 12px;" data-ar="مهلة الترقيع: {e['release_sla_ar']}" data-en="SLA: {e['release_sla_en']}">مهلة الترقيع: {e['release_sla_ar']}</span>
       </div>
     </div>
 
@@ -810,23 +783,23 @@ def generate_html_report(data, output_path, project_root):
       <div class="segmented" id="riskFilters">
         <button class="segmented__option" data-filter="all" aria-pressed="true" onclick="filterByRisk('all')">
           <span data-ar="الكل" data-en="All">الكل</span>
-          <span class="segmented__count num">{data['total_alerts']}</span>
+          <span class="segmented__count num">{e['total_alerts']}</span>
         </button>
         <button class="segmented__option" data-filter="3" aria-pressed="false" onclick="filterByRisk('3')">
           <span data-ar="عالية" data-en="High">عالية</span>
-          <span class="segmented__count num">{data['high_count']}</span>
+          <span class="segmented__count num">{e['high_count']}</span>
         </button>
         <button class="segmented__option" data-filter="2" aria-pressed="false" onclick="filterByRisk('2')">
           <span data-ar="متوسطة" data-en="Medium">متوسطة</span>
-          <span class="segmented__count num">{data['med_count']}</span>
+          <span class="segmented__count num">{e['med_count']}</span>
         </button>
         <button class="segmented__option" data-filter="1" aria-pressed="false" onclick="filterByRisk('1')">
           <span data-ar="منخفضة" data-en="Low">منخفضة</span>
-          <span class="segmented__count num">{data['low_count']}</span>
+          <span class="segmented__count num">{e['low_count']}</span>
         </button>
         <button class="segmented__option" data-filter="0" aria-pressed="false" onclick="filterByRisk('0')">
           <span data-ar="معلوماتية" data-en="Info">معلوماتية</span>
-          <span class="segmented__count num">{data['info_count']}</span>
+          <span class="segmented__count num">{e['info_count']}</span>
         </button>
       </div>
 
@@ -857,7 +830,7 @@ def generate_html_report(data, output_path, project_root):
     <!-- Standards & Methodology Notice -->
     <div class="card glass" style="margin-top: 20px; padding: 22px;">
       <h3 style="font-family: var(--font-display); font-size: 17px; margin-bottom: 8px;">
-        <span class="swash" data-ar="منهجية الفحص الأمني ومعايير أساس" data-en="Security Testing Methodology & Asaas Standards">منهجية الفحص الأمني ومعايير أساس</span>
+        <span class="swash" data-ar="منهجية الفحص الأمني ومعايير حماك" data-en="Security Testing Methodology & Himaak Standards">منهجية الفحص الأمني ومعايير حماك</span>
       </h3>
       <p class="prose subtle" style="font-size: 13.5px; line-height: 1.7;" data-ar="تم تنفيذ هذا الفحص السلبي المؤتمت وفق إطار عمل OWASP المعتمد من قبل فريق الأمن السيبراني في شركة أساس للذكاء الاصطناعي. انقر على أي ثغرة لفتح تقرير المعاينة والتحليل المتقدم، أو استعن بروبوت أساس الذكي في الزاوية للاستفسار فوراً." data-en="Executed under the OWASP automated security framework adopted by ASAAS AI Cybersecurity engineering. Click on any finding to open the comprehensive inspection modal, or ask the Asaas Robot assistant in the bottom corner.">
         تم تنفيذ هذا الفحص السلبي المؤتمت وفق إطار عمل OWASP المعتمد من قبل فريق الأمن السيبراني في شركة أساس للذكاء الاصطناعي. انقر على أي ثغرة لفتح تقرير المعاينة والتحليل المتقدم، أو استعن بروبوت أساس الذكي في الزاوية للاستفسار فوراً.
@@ -883,7 +856,7 @@ def generate_html_report(data, output_path, project_root):
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px;">
-          <button class="btn btn--glass btn--sm" onclick="consultAssistantAboutCurrentFinding()" title="استشارة مساعد أساس حول هذه الثغرة">
+          <button class="btn btn--glass btn--sm" onclick="consultAssistantAboutCurrentFinding()" title="استشارة مساعد حماك حول هذه الثغرة">
             <span>🤖 استشارة المساعد الأمني</span>
           </button>
           <button class="btn btn--glass btn--icon btn--sm" onclick="closeModal()" title="إغلاق">
@@ -982,7 +955,7 @@ def generate_html_report(data, output_path, project_root):
           <div class="section-block" style="margin-top: 14px;">
             <div class="section-label">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-              <span data-ar="إجراءات التحقق المقترحة من شركة أساس" data-en="Asaas Verification Checklist">إجراءات التحقق المقترحة من شركة أساس</span>
+              <span data-ar="إجراءات التحقق المقترحة من حماك" data-en="Himaak Verification Checklist">إجراءات التحقق المقترحة من حماك</span>
             </div>
             <div class="card glass" style="padding: 16px; font-size: 13.5px; line-height: 1.7;" id="mChecklistContainer">
               <ul style="margin: 0; padding-inline-start: 20px;">
@@ -1013,7 +986,7 @@ def generate_html_report(data, output_path, project_root):
             <span id="copyBtnText" data-ar="نسخ تقرير الثغرة" data-en="Copy Details">نسخ تقرير الثغرة</span>
           </button>
           <button class="btn btn--primary btn--sm" onclick="consultAssistantAboutCurrentFinding()">
-            <span>🤖 استشارة مساعد أساس</span>
+            <span>🤖 استشارة مساعد حماك</span>
           </button>
         </div>
 
@@ -1027,17 +1000,17 @@ def generate_html_report(data, output_path, project_root):
 
   <!-- ───────── REAL ASAAS AI ROBOT ASSISTANT WIDGET ───────── -->
   <!-- Launcher Floating Robot Button -->
-  <button class="assistant-launcher" id="asaasLauncher" onclick="toggleAsaasAssistant()" title="مساعد أساس للأمن السيبراني" aria-label="مساعد أساس للأمن السيبراني">
-    <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-robot" id="launcherRobotImg" alt="روبوت أساس للأمن السيبراني" draggable="false">
+  <button class="assistant-launcher" id="asaasLauncher" onclick="toggleAsaasAssistant()" title="مساعد حماك للأمن السيبراني" aria-label="مساعد حماك للأمن السيبراني">
+    <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-robot" id="launcherRobotImg" alt="روبوت حماك للأمن السيبراني" draggable="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="launcherCloseSvg" style="display: none; width: 24px; height: 24px;"><path d="M18 6 6 18M6 6l12 12"/></svg>
   </button>
 
   <!-- Interactive Chat Panel -->
-  <section class="assistant-panel glass glass--thick" id="asaasPanel" role="dialog" aria-label="مساعد أساس الأمني" style="display: none;">
+  <section class="assistant-panel glass glass--thick" id="asaasPanel" role="dialog" aria-label="مساعد حماك الأمني" style="display: none;">
     <header class="assistant-panel__head">
-      <img src="data:image/webp;base64,{asst_b64['face_smile']}" class="assistant-face" id="asstHeadFace" alt="وجه مساعد أساس" draggable="false">
+      <img src="data:image/webp;base64,{asst_b64['face_smile']}" class="assistant-face" id="asstHeadFace" alt="وجه مساعد حماك" draggable="false">
       <div class="assistant-panel__title">
-        <h2 style="font-family: var(--font-display); font-size: 17px; margin: 0;">مساعد أساس الأمني</h2>
+        <h2 style="font-family: var(--font-display); font-size: 17px; margin: 0;">مساعد حماك الأمني</h2>
         <p style="margin: 0; font-size: 11.5px; color: var(--text-3);">مساعدك الذكي لفحص وتحليل الثغرات</p>
       </div>
       <button type="button" class="btn btn--ghost btn--sm btn--icon" onclick="resetAssistantChat()" title="محادثة جديدة" aria-label="محادثة جديدة">
@@ -1051,9 +1024,9 @@ def generate_html_report(data, output_path, project_root):
     <div class="assistant-panel__thread" id="asstThread" aria-live="polite">
       <!-- Welcome View -->
       <div class="assistant-welcome" id="asstWelcome">
-        <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد أساس يرحب بك" draggable="false">
+        <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد حماك يرحب بك" draggable="false">
         <h3 id="asstGreeting">مساء الخير يا مهندس الأمان</h3>
-        <p class="assistant-welcome__lead">أنا مساعد أساس للأمن السيبراني، جاهز لمساعدتك في فحص وتحليل الثغرات واقتراح كود الترقيع البرمجي المعتمد.</p>
+        <p class="assistant-welcome__lead">أنا مساعد حماك للأمن السيبراني، جاهز لمساعدتك في فحص وتحليل الثغرات واقتراح كود الترقيع البرمجي المعتمد.</p>
         <p>اسألني عن أي ثغرة أو اطلب كود الحماية المعياري لترويسات الخادم وتوصيات المعالجة.</p>
 
         <div class="assistant-welcome__suggestions">
@@ -1083,30 +1056,21 @@ def generate_html_report(data, output_path, project_root):
       </button>
     </form>
 
-    <p class="assistant-panel__disclaimer">يجيب من بيانات الفحص الأمني وفق معايير أساس، وقد يخطئ.</p>
+    <p class="assistant-panel__disclaimer">يجيب من بيانات الفحص الأمني وفق معايير حماك، وقد يخطئ.</p>
   </section>
 
   <!-- Footer -->
   <footer class="container" style="text-align: center; padding: 24px 0 40px; border-top: 1px solid var(--hairline); color: var(--text-3); font-size: 13px;">
     <div>
-      <span class="swash">شركة أساس للذكاء الاصطناعي</span> &copy; <span class="num">2026</span> | ASAAS AI Security Automation
+      <span class="swash">حِماك</span> · من شركة أساس للذكاء الاصطناعي &copy; <span class="num">2026</span> | Himaak by ASAAS AI
     </div>
   </footer>
 
   <!-- Embedded Alert Objects & Full Interactive Logic -->
   <script>
+{SAFE_RENDER_JS}
     const ALERTS_DATA = {alerts_json_safe};
-    const CURRENT_REPORT_METRICS = {{
-      score: {data['score']},
-      high: {data['high_count']},
-      med: {data['med_count']},
-      low: {data['low_count']},
-      info: {data['info_count']},
-      target: "{data['target_url']}",
-      statusAr: "{data['status_ar']}",
-      statusEn: "{data['status_en']}",
-      releaseStatus: "{data['release_status']}"
-    }};
+    const CURRENT_REPORT_METRICS = {metrics_json_safe};
     const ASST_FACES = {{
       smile: 'data:image/webp;base64,{asst_b64["face_smile"]}',
       happy: 'data:image/webp;base64,{asst_b64["face_happy"]}',
@@ -1165,9 +1129,9 @@ def generate_html_report(data, output_path, project_root):
       document.getElementById('mRiskBadge').innerText = currentLang === 'en' ? alert.risk_en : alert.risk_ar;
       document.getElementById('mCountBadge').innerText = alert.count + (currentLang === 'en' ? ' instances' : ' حالة');
 
-      document.getElementById('mDesc').innerHTML = alert.desc || '-';
-      document.getElementById('mSolution').innerHTML = alert.solution || '<p>تطبيق أفضل الممارسات المعتمدة وإجراء مراجعة أمنية للكود المصدري.</p>';
-      document.getElementById('mRefs').innerHTML = alert.reference || '<p class="subtle">لا توجد روابط مرجعية مسجلة.</p>';
+      setPlainText(document.getElementById('mDesc'), alert.desc, '-');
+      setPlainText(document.getElementById('mSolution'), alert.solution, 'تطبيق أفضل الممارسات المعتمدة وإجراء مراجعة أمنية للكود المصدري.');
+      renderReferences(document.getElementById('mRefs'), alert.reference, 'لا توجد روابط مرجعية مسجلة.');
       document.getElementById('mCvssVectorText').innerText = "Vector: " + (alert.cvss_vector || 'CVSS:3.1/AV:N');
 
       // Custom Remediation Box
@@ -1183,9 +1147,7 @@ def generate_html_report(data, output_path, project_root):
       // Custom Checklist
       const chkContainer = document.getElementById('mChecklistContainer');
       if (alert.checklist && alert.checklist.length > 0) {{
-        chkContainer.innerHTML = '<ul style="margin: 0; padding-inline-start: 20px;">' +
-          alert.checklist.map(item => `<li>${{item}}</li>`).join('') +
-          '</ul>';
+        renderTextList(chkContainer, alert.checklist);
       }}
 
       // CIA Triad Matrix
@@ -1202,24 +1164,14 @@ def generate_html_report(data, output_path, project_root):
       }}
 
       const instContainer = document.getElementById('mInstancesList');
-      instContainer.innerHTML = '';
+      instContainer.textContent = '';
       if (!alert.instances || alert.instances.length === 0) {{
-        instContainer.innerHTML = '<p class="subtle">لا توجد حالات محددة مسجلة.</p>';
+        const empty = document.createElement('p');
+        empty.className = 'subtle';
+        empty.textContent = 'لا توجد حالات محددة مسجلة.';
+        instContainer.appendChild(empty);
       }} else {{
-        alert.instances.forEach((inst, i) => {{
-          const card = document.createElement('div');
-          card.className = "instance-card";
-          card.innerHTML = `
-            <div class="instance-card__header">
-              <span class="pill pill--tag">#${{i + 1}} - Method: ${{inst.method || 'GET'}}</span>
-              <span class="instance-uri">${{inst.uri || '-'}}</span>
-            </div>
-            ${{inst.param ? `<div style="font-size: 13px;"><strong>المعامل المتأثر (Parameter):</strong> <code>${{inst.param}}</code></div>` : ''}}
-            ${{inst.attack ? `<div style="font-size: 13px;"><strong>حمولة الهجوم (Payload):</strong> <code>${{inst.attack}}</code></div>` : ''}}
-            ${{inst.evidence ? `<div style="font-size: 13px; margin-top: 4px;"><strong>الدليل المكتشف (Evidence):</strong><div class="evidence-box"><code>${{inst.evidence}}</code></div></div>` : ''}}
-          `;
-          instContainer.appendChild(card);
-        }});
+        alert.instances.forEach((inst, i) => instContainer.appendChild(buildInstanceCard(inst, i)));
       }}
 
       switchModalTab('overview');
@@ -1241,7 +1193,7 @@ def generate_html_report(data, output_path, project_root):
 
         function copyFindingDetails() {{
       if (!currentAlert) return;
-      let text = `### [تقرير أمان شركة أساس] ${{currentAlert.name_ar}}
+      let text = `### [تقرير أمان حماك] ${{currentAlert.name_ar}}
 - **اسم الثغرة الإنجليزي:** ${{currentAlert.name}}
 - **مستوى الخطورة:** ${{currentAlert.risk_ar}} (${{currentAlert.risk_en}})
 - **تصنيف OWASP:** ${{currentAlert.owasp || 'N/A'}}
@@ -1257,7 +1209,8 @@ ${{currentAlert.desc.replace(/<[^>]+>/g, '')}}
 ${{currentAlert.remediation_title || ''}}`;
 
       if (currentAlert.remediation_code) {{
-        text += `\n\n\`\`\`\n${{currentAlert.remediation_code}}\n\`\`\``;
+        const fence = '`'.repeat(3);
+        text += '\\n\\n' + fence + '\\n' + currentAlert.remediation_code + '\\n' + fence;
       }}
 
       safeCopy(text, () => {{
@@ -1346,9 +1299,9 @@ ${{currentAlert.remediation_title || ''}}`;
       const thread = document.getElementById('asstThread');
       thread.innerHTML = `
         <div class="assistant-welcome" id="asstWelcome">
-          <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد أساس يرحب بك" draggable="false">
+          <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد حماك يرحب بك" draggable="false">
           <h3 id="asstGreeting">${{new Date().getHours() < 12 ? 'صباح الخير يا مهندس الأمان' : 'مساء الخير يا مهندس الأمان'}}</h3>
-          <p class="assistant-welcome__lead">أنا مساعد أساس للأمن السيبراني، جاهز لمساعدتك في فحص وتحليل الثغرات واقتراح كود الترقيع البرمجي المعتمد.</p>
+          <p class="assistant-welcome__lead">أنا مساعد حماك للأمن السيبراني، جاهز لمساعدتك في فحص وتحليل الثغرات واقتراح كود الترقيع البرمجي المعتمد.</p>
           <p>اسألني عن أي ثغرة أو اطلب كود الحماية المعياري لترويسات الخادم وتوصيات المعالجة.</p>
 
           <div class="assistant-welcome__suggestions">
@@ -1423,8 +1376,8 @@ ${{currentAlert.remediation_title || ''}}`;
       const typing = document.createElement('div');
       typing.className = "bubble bubble--assistant";
       typing.innerHTML = `
-        <img src="${{ASST_FACES.waiting}}" class="assistant-face assistant-face--sm" alt="أساس يفكر" draggable="false">
-        <span class="typing" role="status" aria-label="أساس يكتب..."><i/><i/><i/></span>
+        <img src="${{ASST_FACES.waiting}}" class="assistant-face assistant-face--sm" alt="حماك يفكر" draggable="false">
+        <span class="typing" role="status" aria-label="حماك يكتب..."><i/><i/><i/></span>
       `;
       thread.appendChild(typing);
       thread.scrollTo({{ top: thread.scrollHeight, behavior: 'smooth' }});
@@ -1445,7 +1398,7 @@ ${{currentAlert.remediation_title || ''}}`;
       }}
 
       bubble.innerHTML = `
-        <img src="${{faceSrc}}" class="assistant-face assistant-face--sm" alt="وجه أساس" draggable="false">
+        <img src="${{faceSrc}}" class="assistant-face assistant-face--sm" alt="وجه حماك" draggable="false">
         <div class="bubble__body">
           <div class="bubble__text" style="font-size: 13.5px; line-height: 1.6;">${{htmlText}}${{followupsHtml}}</div>
         </div>
@@ -1454,9 +1407,6 @@ ${{currentAlert.remediation_title || ''}}`;
       thread.scrollTo({{ top: thread.scrollHeight, behavior: 'smooth' }});
     }}
 
-    function escapeHtml(str) {{
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }}
 
     function generateAssistantAIResponse(query) {{
       const qLower = query.toLowerCase();
@@ -1466,7 +1416,7 @@ ${{currentAlert.remediation_title || ''}}`;
 
       if (qLower.includes('لخص') || qLower.includes('وضع') || qLower.includes('تقرير') || qLower.includes('نتيجة') || qLower.includes('score')) {{
         mood = CURRENT_REPORT_METRICS.score >= 80 ? "celebrate" : "waiting";
-        reply = `📊 <strong>ملخص تقرير الفحص الأمني للهدف (${{CURRENT_REPORT_METRICS.target}}):</strong><br><br>` +
+        reply = `📊 <strong>ملخص تقرير الفحص الأمني للهدف (${{escapeHtml(CURRENT_REPORT_METRICS.target)}}):</strong><br><br>` +
                 `• <strong>مؤشر السلامة:</strong> ${{CURRENT_REPORT_METRICS.score}}/100 (${{CURRENT_REPORT_METRICS.statusAr}})<br>` +
                 `• <strong>الثغرات عالية الخطورة:</strong> ${{CURRENT_REPORT_METRICS.high}} ثغرة<br>` +
                 `• <strong>الثغرات متوسطة الخطورة:</strong> ${{CURRENT_REPORT_METRICS.med}} ثغرة<br>` +
@@ -1482,7 +1432,7 @@ ${{currentAlert.remediation_title || ''}}`;
           reply = `✅ <strong>بشرى سارة:</strong> لا توجد أي ثغرات عالية أو متوسطة الخطورة في هذا الفحص! النظام يجتاز معايير الأمان الموصى بها.`;
         }} else {{
           mood = "waiting";
-          const names = criticals.map(c => `• <strong>${{c.name_ar}}</strong> (${{c.risk_ar}}) - [${{c.owasp || 'OWASP'}}]`).join('<br>');
+          const names = criticals.map(c => `• <strong>${{escapeHtml(c.name_ar)}}</strong> (${{escapeHtml(c.risk_ar)}}) - [${{escapeHtml(c.owasp || 'OWASP')}}]`).join('<br>');
           reply = `⚠️ <strong>أبرز الثغرات التي تتطلب تدخلاً هندسياً عاجلاً:</strong><br><br>${{names}}<br><br>انقر على أي منها في جدول التقرير لمعاينة الدليل التقني وتوصيات التصحيح.`;
           followups = ["كيف أقوم بمعالجة ثغرة حقن SQL بشكل جذري؟", "ما هي إعدادات Nginx الموصى بها لترويسات CSP و HSTS؟"];
         }}
@@ -1502,7 +1452,7 @@ await client.query('SELECT * FROM users WHERE email = $1', [userId]);</code></pr
       }}
       else if (qLower.includes('csp') || qLower.includes('محتوى')) {{
         mood = "happy";
-        reply = `🔒 <strong>ترويسة سياسة أمان المحتوى (CSP) القياسية لأساس:</strong><br><br>` +
+        reply = `🔒 <strong>ترويسة سياسة أمان المحتوى (CSP) القياسية من حماك:</strong><br><br>` +
                 `<div class="code-container"><pre class="evidence-box"><code># Nginx Config:
 add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;</code></pre><button class="code-copy-btn" onclick="copyCodeDirect(this)">نسخ الكود</button></div>` +
                 `هذه الترويسة تمنع هجمات XSS وتمنع تضمين موقعك داخل إطارات Iframe ضارة (Anti-Clickjacking).`;
@@ -1525,11 +1475,12 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
         followups = ["كيف أعالج ثغرة حقن SQL؟", "هل النظام مؤهل للإطلاق؟"];
       }}
       else if (qLower.includes('مؤهل') || qLower.includes('إطلاق') || qLower.includes('إنتاج') || qLower.includes('release')) {{
-        if (CURRENT_REPORT_METRICS.high > 0) {{
+        if (CURRENT_REPORT_METRICS.releaseStatus === 'blocked') {{
           mood = "waiting";
           reply = `⛔ <strong>توصية قرار الإطلاق (Release Decision):</strong><br><br>` +
-                  `نوصي بـ <strong>حجب الإطلاق حالياً (Block Release)</strong> لوجود ${{CURRENT_REPORT_METRICS.high}} ثغرة عالية الخطورة. سياسة أساس الأمنية تشترط أن تكون الثغرات عالية الخطورة صفراً مع درجة سلامة لا تقل عن 85%.`;
-        }} else if (CURRENT_REPORT_METRICS.med > 0) {{
+                  `نوصي بـ <strong>حجب الإطلاق حالياً (Block Release)</strong>: ${{CURRENT_REPORT_METRICS.high}} ثغرة عالية الخطورة، ومؤشر السلامة ${{CURRENT_REPORT_METRICS.score}}/100. ` +
+                  `سياسة حماك: يُحجب الإطلاق عند وجود أي ثغرة عالية الخطورة أو انخفاض المؤشر دون 50، ويكون مشروطاً عند وجود ثغرات متوسطة فقط.`;
+        }} else if (CURRENT_REPORT_METRICS.releaseStatus === 'conditional') {{
           mood = "happy";
           reply = `⚠️ <strong>توصية قرار الإطلاق:</strong><br><br>` +
                   `يمكن الإطلاق المشروط (Conditional Release) مع جدولة معالجة الثغرات متوسطة الخطورة (${{CURRENT_REPORT_METRICS.med}} ثغرة) خلال أسبوعين.`;
@@ -1541,7 +1492,7 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
         followups = ["ما هي أخطر الثغرات المرصودة في هذا الفحص؟", "قائمة التحقق الأمني قبل الاعتماد"];
       }}
       else if (qLower.includes('تحقق') || qLower.includes('checklist')) {{
-        reply = `📋 <strong>قائمة التحقق الأمني المعتمدة قبل الإطلاق (Asaas Baseline):</strong><br><br>` +
+        reply = `📋 <strong>قائمة التحقق الأمني المعتمدة قبل الإطلاق (Himaak Baseline):</strong><br><br>` +
                 `1. تفعيل ترويسات: CSP, HSTS, X-Content-Type-Options, X-Frame-Options.<br>` +
                 `2. تعيين خصائص الكوكيز الحساسة: <code>HttpOnly; Secure; SameSite=Strict</code>.<br>` +
                 `3. التحقق من رموز Anti-CSRF في جميع طلبات تعديل البيانات (POST/PUT/DELETE).<br>` +
@@ -1549,7 +1500,7 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
         followups = ["ما هي إعدادات Nginx الموصى بها لترويسات CSP و HSTS؟", "لخص لي الوضع الأمني العام"];
       }}
       else {{
-        reply = `🤖 بصفتي مساعد أساس الأمني، أنا هنا لمساعدتك في فهم كل تفاصيل هذا التقرير الأمني. ` +
+        reply = `🤖 بصفتي مساعد حماك الأمني، أنا هنا لمساعدتك في فهم كل تفاصيل هذا التقرير الأمني. ` +
                 `يمكنك سؤالي عن: كيفية ترقيع أي ثغرة واردة بالتقرير، إعدادات الخوادم المشفرة، أو شرح معايير CWE المرفقة.`;
         followups = ["لخص لي الوضع الأمني العام", "ما هي أخطر الثغرات المرصودة في هذا الفحص؟"];
       }}
@@ -1628,8 +1579,8 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
 
       // 2. Document Title
       document.title = lang === 'ar'
-        ? 'تقرير الفحص الأمني الشامل | شركة أساس للأمن السيبراني'
-        : 'OWASP ZAP Comprehensive Security Assessment Report | Asaas AI';
+        ? 'حِماك | تقرير الفحص الأمني الشامل'
+        : 'Himaak | OWASP ZAP Security Assessment Report';
 
       // 3. Static elements with data-ar and data-en
       document.querySelectorAll('[data-ar][data-en]').forEach(el => {{
@@ -1667,16 +1618,16 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
       const asstInput = document.getElementById('asstInput');
       if (asstInput) {{
         asstInput.placeholder = lang === 'ar'
-          ? 'اسأل مساعد أساس عن أي ثغرة أو خطة معالجة...'
-          : 'Ask Asaas AI about any alert or remediation...';
+          ? 'اسأل مساعد حماك عن أي ثغرة أو خطة معالجة...'
+          : 'Ask Himaak about any alert or remediation...';
       }}
 
       // 5. Assistant Greeting & Chips
       const asstGreet = document.getElementById('asstGreeting');
       if (asstGreet) {{
         asstGreet.innerText = lang === 'ar'
-          ? 'أهلاً بك! أنا مساعد أساس الذكي لتحليل ثغرات فحص OWASP ZAP وبوابات الجودة الأمنية. كيف يمكنني إرشادك اليوم؟'
-          : 'Welcome! I am Asaas Cyber Assistant for OWASP ZAP vulnerability analysis and release gates. How can I guide you today?';
+          ? 'أهلاً بك! أنا مساعد حماك الذكي لتحليل ثغرات فحص OWASP ZAP وبوابات الجودة الأمنية. كيف يمكنني إرشادك اليوم؟'
+          : 'Welcome! I am the Himaak security assistant for OWASP ZAP vulnerability analysis and release gates. How can I guide you today?';
       }}
 
       // 6. Update Theme Icon & button title
@@ -1750,59 +1701,90 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
+def _md_cell(value, code=False):
+    """Makes untrusted text safe for one Markdown table cell.
+
+    code=True is for values placed inside an inline code span, where HTML is
+    already shown literally; otherwise HTML and emphasis characters are escaped too.
+    """
+    text = re.sub(r"[\r\n]+", " ", "" if value is None else str(value))
+    text = text.replace("|", "\\|").replace("`", "'").strip()
+    if not code:
+        text = html.escape(text, quote=False).replace("*", "\\*").replace("_", "\\_")
+    return text
+
+
 def write_github_summary(data, summary_path):
-    """Writes a clean Markdown summary for GitHub Actions Step Summary."""
+    """Appends a Markdown summary to the GitHub Actions step summary file."""
     if not summary_path:
         return
-        
-    release_badge = "✅ معتمد للإطلاق (Approved)" if data['release_status'] == "approved" else "⚠️ إطلاق مشروط (Conditional)" if data['release_status'] == "conditional" else "⛔ محجوب عن الإطلاق (Blocked)"
 
-    md = f"""# 🛡️ تقرير الفحص الأمني المعتمد | ASAAS AI Security Assessment
+    release_badge = {
+        "approved": "✅ معتمد للإطلاق (Approved)",
+        "conditional": "⚠️ إطلاق مشروط (Conditional)",
+    }.get(data["release_status"], "⛔ محجوب عن الإطلاق (Blocked)")
+    risk_icon = {3: "🔴 High", 2: "🟡 Medium", 1: "🟢 Low", 0: "⚪ Info"}
 
-### ملخص نتائج الفحص الآلي (OWASP ZAP)
-- **الهدف المستهدف:** `{data['target_url']}`
-- **تاريخ وتوقيت الفحص:** {data['generated_at']}
-- **إصدار المحرك:** `{data['zap_version']}`
-- **مؤشر السلامة الأمنية:** **{data['score']}/100** ({data['status_ar']})
-- **قرار الاعتماد الأمني:** **{release_badge}**
+    rows = "\n".join(
+        f"| {risk_icon.get(a['riskcode'], '⚪ Info')} | **{_md_cell(a['name_ar'])}**<br>_{_md_cell(a['name'])}_ "
+        f"| {a['count']} | `{('CWE-' + a['cweid']) if a['cweid'] else '—'}` |"
+        for a in data["alerts"]
+    ) or "| — | لم يتم رصد أي ثغرات | 0 | — |"
 
-| مستوى الخطورة | عدد التنبيهات | حالة المعالجة |
-| :--- | :---: | :--- |
-| 🔴 **عالية الخطورة** | **{data['high_count']}** | تتطلب معالجة فورية وحجب الإطلاق |
-| 🟠 **متوسطة الخطورة** | **{data['med_count']}** | معالجة مجدولة قبل التحديث القادم |
-| 🟢 **منخفضة الخطورة** | **{data['low_count']}** | تحسينات وقائية وتصليد أمني |
-| 🔵 **معلوماتية** | **{data['info_count']}** | ملاحظات توثيقية |
+    md = f"""
+# 🛡️ {PRODUCT_NAME_AR} | {PRODUCT_NAME_EN} Security Scan
+
+> **الهدف المفحوص:** `{_md_cell(data['target_url'], code=True) or '—'}`
+> **توقيت الفحص:** `{_md_cell(data['generated_at'], code=True)}` | **محرك الفحص:** `{_md_cell(data['zap_version'], code=True)}`
+
+| مؤشر السلامة | قرار الإطلاق | عالية | متوسطة | منخفضة | معلوماتية | إجمالي الحالات |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **{data['score']} / 100**<br>_{data['status_ar']}_ | **{release_badge}** | **{data['high_count']}** | **{data['med_count']}** | **{data['low_count']}** | **{data['info_count']}** | **{data['total_instances']}** |
+
+### 🔍 الثغرات المرصودة
+
+| الخطورة | الثغرة | الحالات | CWE |
+| :--- | :--- | :---: | :---: |
+{rows}
 
 ---
-*تم توليد هذا التقرير آلياً وفق معايير الهوية البصرية لشركة أساس للذكاء الاصطناعي (ASAAS AI Design System).*
+💡 التقرير التفاعلي الكامل مرفوع كملف ناتج (Artifact) في هذا التشغيل.
 """
     try:
-        with open(summary_path, "w", encoding="utf-8") as f:
+        # GitHub expects steps to append to $GITHUB_STEP_SUMMARY, not overwrite it.
+        with open(summary_path, "a", encoding="utf-8") as f:
             f.write(md)
-    except Exception as e:
-        print(f"[ASAAS] Warning: Could not write GitHub step summary: {e}")
+    except OSError as err:
+        print(f"[{PRODUCT_NAME_EN}] Warning: Could not write GitHub step summary: {err}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate Asaas Security HTML Report from OWASP ZAP JSON")
+    parser = argparse.ArgumentParser(description=f"{PRODUCT_NAME_EN}: generate a security HTML report from OWASP ZAP JSON")
     parser.add_argument("--json", required=True, help="Path to zap_report.json")
-    parser.add_argument("--output-html", default="zap_report.html", help="Path for HTML output")
-    parser.add_argument("--summary", default="", help="Path to GitHub step summary file")
-    
+    parser.add_argument("--output-html", default="himaak_report.html", help="Path for HTML output")
+    parser.add_argument("--summary", default="", help="Path to the GitHub step summary file (appended to)")
+    parser.add_argument("--fail-on", choices=["none", "blocked", "conditional"], default="none",
+                        help="Exit with code 1 when the release decision is at least this severe")
     args = parser.parse_args()
-    
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    print(f"[ASAAS] Parsing ZAP report: {args.json}")
+
+    print(f"[{PRODUCT_NAME_EN}] Parsing ZAP report: {args.json}")
     report_data = parse_zap_json(args.json)
-    
-    print(f"[ASAAS] Generating branded HTML report: {args.output_html}")
-    generate_html_report(report_data, args.output_html, project_root)
-    
+
+    print(f"[{PRODUCT_NAME_EN}] Generating HTML report: {args.output_html}")
+    generate_html_report(report_data, args.output_html, PROJECT_ROOT)
+
     if args.summary:
-        print(f"[ASAAS] Writing GitHub step summary: {args.summary}")
+        print(f"[{PRODUCT_NAME_EN}] Writing GitHub step summary: {args.summary}")
         write_github_summary(report_data, args.summary)
-        
-    print(f"[ASAAS] Success! Report generated with score: {report_data['score']}/100")
+
+    status = report_data["release_status"]
+    print(f"[{PRODUCT_NAME_EN}] Done. Score: {report_data['score']}/100, release decision: {status}")
+
+    failing = {"blocked": {"blocked"}, "conditional": {"blocked", "conditional"}}.get(args.fail_on, set())
+    if status in failing:
+        print(f"[{PRODUCT_NAME_EN}] Release gate failed (--fail-on {args.fail_on}).")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

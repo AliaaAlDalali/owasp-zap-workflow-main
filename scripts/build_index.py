@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Script to build the ultimate, pristine index.html for OWASP ZAP Workflow,
-embedding all Thmanyah fonts, logos, assistant moods, interactive reports switcher,
-finding inspector modal, and the real interactive Asaas Assistant.
+Builds index.html, the Himaak (حِماك) dashboard: sample reports switcher,
+client-side viewer for any zap_report.json, finding inspector and assistant.
+
+Run from anywhere:  python scripts/build_index.py
 """
 
 import os
 import sys
-import json
 
-project_root = r"C:\Users\Qursan\Desktop\owasp-zap-workflow-main"
-sys.path.append(project_root)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from scripts.generate_report import get_inlined_brand_css, get_assistant_assets_b64, load_file_b64
+from generate_report import (  # noqa: E402
+    PROJECT_ROOT, SAFE_RENDER_JS, esc, json_for_script, summarize_report,
+    get_inlined_brand_css, get_assistant_assets_b64, load_file_b64,
+)
+
+project_root = PROJECT_ROOT
 
 inlined_css = get_inlined_brand_css(project_root)
 asst_b64 = get_assistant_assets_b64(project_root)
@@ -222,14 +226,50 @@ REPORTS_DATA = {
     }
 }
 
-reports_json_str = json.dumps(REPORTS_DATA).replace("</script>", "<\\/script>")
+reports_json_str = json_for_script(REPORTS_DATA)
+
+# Sample report cards: score, status and finding counts are computed from the data
+# with the same policy as the report generator, so the labels can never drift.
+REPORT_CARDS = [
+    ("webapp", "تقرير فحص بوابة الخدمات الرئيسية", "Production Web Application Scan", "OWASP ZAP 2.14"),
+    ("api", "تقرير فحص واجهات البرمجة (APIs)", "REST & GraphQL Gateway Scan", "ZAP API Scan"),
+    ("auth", "تقرير فحص بوابة الهوية والنفاذ", "Identity & SSO Service Scan", "Auth Hardening"),
+]
+RELEASE_PILL = {"blocked": "pill--high", "conditional": "pill--medium", "approved": "pill--paid"}
+
+
+def build_report_cards():
+    cards = []
+    for i, (key, title_ar, title_en, tag) in enumerate(REPORT_CARDS):
+        s = summarize_report(REPORTS_DATA[key])
+        date = " ".join(s["generated_at"].split(" ")[:4])
+        active = " is-active" if i == 0 else ""
+        cards.append(f"""
+        <div class="card glass report-select-card{active}" id="card-{esc(key)}" onclick="switchReport('{esc(key)}', this)">
+          <div class="report-select-header">
+            <span class="pill {RELEASE_PILL[s['release_status']]}" data-ar="{esc(s['status_ar'])} ({s['score']}/100)" data-en="{esc(s['status_en'])} ({s['score']}/100)">{esc(s['status_ar'])} ({s['score']}/100)</span>
+            <span class="pill pill--tag">{esc(tag)}</span>
+          </div>
+          <div class="report-select-title">
+            <span class="swash" data-ar="{esc(title_ar)}" data-en="{esc(title_en)}">{esc(title_ar)}</span>
+          </div>
+          <div class="subtle" style="font-size: 13px; direction: ltr; text-align: start;">{esc(s['target_url'])}</div>
+          <div class="report-select-meta">
+            <span><span class="num">{s['total_alerts']}</span> <span data-ar="ملاحظات أمنية" data-en="findings">ملاحظات أمنية</span></span>
+            <span class="num">{esc(date)}</span>
+          </div>
+        </div>""")
+    return "\n".join(cards)
+
+
+report_cards_html = build_report_cards()
 
 html_content = f"""<!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>منصة أتمتة الفحص الأمني | شركة أساس للذكاء الاصطناعي</title>
+  <title>حِماك | منصة أتمتة الفحص الأمني</title>
   <link rel="icon" type="image/png" href="data:image/png;base64,{favicon_b64}">
   <style>
     {inlined_css}
@@ -264,9 +304,9 @@ html_content = f"""<!DOCTYPE html>
   <header class="app-header glass glass--thick">
     <div class="container app-header__inner">
       <div class="brand">
-        <div class="brand__mark" aria-label="شعار شركة أساس"></div>
+        <div class="brand__mark" aria-label="شعار حماك"></div>
         <div>
-          <div class="brand__name"><span class="swash">أسَــاس</span> <span class="hide-mobile" style="font-size: 15px; font-weight: 500; color: var(--accent);">للأمن السيبراني</span></div>
+          <div class="brand__name"><span class="swash">حِمَــاك</span> <span class="hide-mobile" style="font-size: 15px; font-weight: 500; color: var(--accent);">من أساس</span></div>
           <div class="brand__tag hide-mobile" data-ar="منظومة أتمتة الفحص الأمني المتقدم" data-en="Automated Security Assessment System">منظومة أتمتة الفحص الأمني المتقدم</div>
         </div>
       </div>
@@ -285,7 +325,7 @@ html_content = f"""<!DOCTYPE html>
         </button>
 
         <!-- Standalone Report Links -->
-        <a href="report.html" class="btn btn--glass btn--sm hide-mobile" title="فتح التقرير المستقل الكامل">
+        <a href="docs/sample_report.html" class="btn btn--glass btn--sm hide-mobile" title="فتح التقرير المستقل الكامل">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
           <span data-ar="التقرير المستقل" data-en="Standalone Report">التقرير المستقل</span>
         </a>
@@ -312,54 +352,7 @@ html_content = f"""<!DOCTYPE html>
       </div>
 
       <div class="reports-grid" id="reportsDeck">
-        
-        <!-- Report 1: Main Web App -->
-        <div class="card glass report-select-card is-active" id="card-webapp" onclick="switchReport('webapp', this)">
-          <div class="report-select-header">
-            <span class="pill pill--high" data-ar="متوسط الخطورة (52/100)" data-en="Medium Risk (52/100)">متوسط الخطورة (52/100)</span>
-            <span class="pill pill--tag">OWASP ZAP 2.14</span>
-          </div>
-          <div class="report-select-title">
-            <span class="swash" data-ar="تقرير فحص بوابة الخدمات الرئيسية" data-en="Production Web Application Scan">تقرير فحص بوابة الخدمات الرئيسية</span>
-          </div>
-          <div class="subtle" style="font-size: 13px; direction: ltr; text-align: start;">https://example-corp.ai-asaas.com</div>
-          <div class="report-select-meta">
-            <span><span class="num">5</span> <span data-ar="ثغرات مرصودة" data-en="findings">ثغرات مرصودة</span></span>
-            <span class="num">Sun, 8 Nov 2026</span>
-          </div>
-        </div>
-
-        <!-- Report 2: API Gateway -->
-        <div class="card glass report-select-card" id="card-api" onclick="switchReport('api', this)">
-          <div class="report-select-header">
-            <span class="pill pill--low" data-ar="امتثال عالي (88/100)" data-en="High Compliance (88/100)">امتثال عالي (88/100)</span>
-            <span class="pill pill--tag">ZAP API Scan</span>
-          </div>
-          <div class="report-select-title">
-            <span class="swash" data-ar="تقرير فحص واجهات البرمجة (APIs)" data-en="REST & GraphQL Gateway Scan">تقرير فحص واجهات البرمجة (APIs)</span>
-          </div>
-          <div class="subtle" style="font-size: 13px; direction: ltr; text-align: start;">https://api.ai-asaas.com/v1</div>
-          <div class="report-select-meta">
-            <span><span class="num">3</span> <span data-ar="ملاحظات أمنية" data-en="findings">ملاحظات أمنية</span></span>
-            <span class="num">Sun, 8 Nov 2026</span>
-          </div>
-        </div>
-
-        <!-- Report 3: Auth & Identity Service -->
-        <div class="card glass report-select-card" id="card-auth" onclick="switchReport('auth', this)">
-          <div class="report-select-header">
-            <span class="pill pill--paid" data-ar="آمن / ممتاز (96/100)" data-en="Secure (96/100)">آمن / ممتاز (96/100)</span>
-            <span class="pill pill--tag">Auth Hardening</span>
-          </div>
-          <div class="report-select-title">
-            <span class="swash" data-ar="تقرير فحص بوابة الهوية والنفاذ" data-en="Identity & SSO Service Scan">تقرير فحص بوابة الهوية والنفاذ</span>
-          </div>
-          <div class="subtle" style="font-size: 13px; direction: ltr; text-align: start;">https://auth.ai-asaas.com</div>
-          <div class="report-select-meta">
-            <span><span class="num">1</span> <span data-ar="ملاحظة تحسين" data-en="finding">ملاحظة تحسين</span></span>
-            <span class="num">Sat, 7 Nov 2026</span>
-          </div>
-        </div>
+{report_cards_html}
 
       </div>
     </section>
@@ -580,10 +573,10 @@ html_content = f"""<!DOCTYPE html>
       <!-- Methodology Note -->
       <div class="card glass" style="margin-top: 20px; padding: 22px;">
         <h3 style="font-family: var(--font-display); font-size: 17px; margin-bottom: 8px;">
-          <span class="swash" data-ar="معايير أساس للفحص الأمني المؤتمت" data-en="ASAAS Automated Security Baseline">معايير أساس للفحص الأمني المؤتمت</span>
+          <span class="swash" data-ar="معايير حماك للفحص الأمني المؤتمت" data-en="Himaak Automated Security Baseline">معايير حماك للفحص الأمني المؤتمت</span>
         </h3>
-        <p class="prose subtle" style="font-size: 13.5px; line-height: 1.7;" data-ar="تعتمد منصة أساس على محرك OWASP ZAP المتقدم لتنفيذ اختبارات الاختراق السلبية والتحقق من الترويسات ومسارات الحقن. انقر على أي ثغرة لفتح بطاقة المعاينة والحلول الهندسية، أو اسأل مساعد أساس الآلي في أسفل الصفحة للاستشارة المباشرة." data-en="ASAAS platform utilizes OWASP ZAP baseline scanner for automated security assessment. Click any finding card to open the comprehensive inspection modal, or ask the Asaas Robot assistant in the bottom corner.">
-          تعتمد منصة أساس على محرك OWASP ZAP المتقدم لتنفيذ اختبارات الاختراق السلبية والتحقق من الترويسات ومسارات الحقن. انقر على أي ثغرة لفتح بطاقة المعاينة والحلول الهندسية، أو اسأل مساعد أساس الآلي في أسفل الصفحة للاستشارة المباشرة.
+        <p class="prose subtle" style="font-size: 13.5px; line-height: 1.7;" data-ar="تعتمد منصة حماك على محرك OWASP ZAP المتقدم لتنفيذ اختبارات الاختراق السلبية والتحقق من الترويسات ومسارات الحقن. انقر على أي ثغرة لفتح بطاقة المعاينة والحلول الهندسية، أو اسأل مساعد حماك الآلي في أسفل الصفحة للاستشارة المباشرة." data-en="ASAAS platform utilizes OWASP ZAP baseline scanner for automated security assessment. Click any finding card to open the comprehensive inspection modal, or ask the Asaas Robot assistant in the bottom corner.">
+          تعتمد منصة حماك على محرك OWASP ZAP المتقدم لتنفيذ اختبارات الاختراق السلبية والتحقق من الترويسات ومسارات الحقن. انقر على أي ثغرة لفتح بطاقة المعاينة والحلول الهندسية، أو اسأل مساعد حماك الآلي في أسفل الصفحة للاستشارة المباشرة.
         </p>
       </div>
 
@@ -607,7 +600,7 @@ html_content = f"""<!DOCTYPE html>
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px;">
-          <button class="btn btn--glass btn--sm" onclick="consultAssistantAboutCurrentFinding()" title="استشارة مساعد أساس حول هذه الثغرة">
+          <button class="btn btn--glass btn--sm" onclick="consultAssistantAboutCurrentFinding()" title="استشارة مساعد حماك حول هذه الثغرة">
             <span>🤖 استشارة المساعد الأمني</span>
           </button>
           <button class="btn btn--glass btn--icon btn--sm" onclick="closeModal()" title="إغلاق">
@@ -705,7 +698,7 @@ html_content = f"""<!DOCTYPE html>
           <div class="section-block" style="margin-top: 14px;">
             <div class="section-label">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-              <span data-ar="إجراءات التحقق المقترحة من شركة أساس" data-en="Asaas Verification Checklist">إجراءات التحقق المقترحة من شركة أساس</span>
+              <span data-ar="إجراءات التحقق المقترحة من حماك" data-en="Himaak Verification Checklist">إجراءات التحقق المقترحة من حماك</span>
             </div>
             <div class="card glass" style="padding: 16px; font-size: 13.5px; line-height: 1.7;">
               <div id="mChecklistContainer" style="display: none;"></div>
@@ -737,7 +730,7 @@ html_content = f"""<!DOCTYPE html>
             <span id="copyBtnText" data-ar="نسخ تقرير الثغرة" data-en="Copy Details">نسخ تقرير الثغرة</span>
           </button>
           <button class="btn btn--primary btn--sm" onclick="consultAssistantAboutCurrentFinding()">
-            <span>🤖 استشارة مساعد أساس</span>
+            <span>🤖 استشارة مساعد حماك</span>
           </button>
         </div>
 
@@ -751,17 +744,17 @@ html_content = f"""<!DOCTYPE html>
 
   <!-- ───────── REAL ASAAS AI ROBOT ASSISTANT WIDGET ───────── -->
   <!-- Launcher Floating Robot Button -->
-  <button class="assistant-launcher" id="asaasLauncher" onclick="toggleAsaasAssistant()" title="مساعد أساس للأمن السيبراني" aria-label="مساعد أساس للأمن السيبراني">
-    <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-robot" id="launcherRobotImg" alt="روبوت أساس للأمن السيبراني" draggable="false">
+  <button class="assistant-launcher" id="asaasLauncher" onclick="toggleAsaasAssistant()" title="مساعد حماك للأمن السيبراني" aria-label="مساعد حماك للأمن السيبراني">
+    <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-robot" id="launcherRobotImg" alt="روبوت حماك للأمن السيبراني" draggable="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="launcherCloseSvg" style="display: none; width: 24px; height: 24px;"><path d="M18 6 6 18M6 6l12 12"/></svg>
   </button>
 
   <!-- Interactive Chat Panel -->
-  <section class="assistant-panel glass glass--thick" id="asaasPanel" role="dialog" aria-label="مساعد أساس الأمني" style="display: none;">
+  <section class="assistant-panel glass glass--thick" id="asaasPanel" role="dialog" aria-label="مساعد حماك الأمني" style="display: none;">
     <header class="assistant-panel__head">
-      <img src="data:image/webp;base64,{asst_b64['face_smile']}" class="assistant-face" id="asstHeadFace" alt="وجه مساعد أساس" draggable="false">
+      <img src="data:image/webp;base64,{asst_b64['face_smile']}" class="assistant-face" id="asstHeadFace" alt="وجه مساعد حماك" draggable="false">
       <div class="assistant-panel__title">
-        <h2 style="font-family: var(--font-display); font-size: 17px; margin: 0;">مساعد أساس الأمني</h2>
+        <h2 style="font-family: var(--font-display); font-size: 17px; margin: 0;">مساعد حماك الأمني</h2>
         <p style="margin: 0; font-size: 11.5px; color: var(--text-3);">مساعدك الذكي لفحص وتحليل الثغرات</p>
       </div>
       <button type="button" class="btn btn--ghost btn--sm btn--icon" onclick="resetAssistantChat()" title="محادثة جديدة" aria-label="محادثة جديدة">
@@ -775,9 +768,9 @@ html_content = f"""<!DOCTYPE html>
     <div class="assistant-panel__thread" id="asstThread" aria-live="polite">
       <!-- Welcome View -->
       <div class="assistant-welcome" id="asstWelcome">
-        <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد أساس يرحب بك" draggable="false">
+        <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد حماك يرحب بك" draggable="false">
         <h3 id="asstGreeting">مساء الخير يا مهندس الأمان</h3>
-        <p class="assistant-welcome__lead">أنا مساعد أساس الذكي، كيف أقدر أساعدك اليوم في مراجعة التقرير الأمني؟</p>
+        <p class="assistant-welcome__lead">أنا مساعد حماك الذكي، كيف أقدر أساعدك اليوم في مراجعة التقرير الأمني؟</p>
         <p>اسألني عن أي ثغرة أو اطلب كود الحماية المعياري لترويسات الخادم وتوصيات المعالجة.</p>
 
         <div class="assistant-welcome__suggestions">
@@ -807,18 +800,19 @@ html_content = f"""<!DOCTYPE html>
       </button>
     </form>
 
-    <p class="assistant-panel__disclaimer">يجيب من بيانات الفحص الأمني وفق معايير أساس، وقد يخطئ.</p>
+    <p class="assistant-panel__disclaimer">يجيب من بيانات الفحص الأمني وفق معايير حماك، وقد يخطئ.</p>
   </section>
 
   <!-- Footer -->
   <footer class="container" style="text-align: center; padding: 24px 0 40px; border-top: 1px solid var(--hairline); color: var(--text-3); font-size: 13px;">
     <div>
-      <span class="swash">شركة أساس للذكاء الاصطناعي</span> &copy; <span class="num">2026</span> | ASAAS AI Security Automation Hub
+      <span class="swash">حِماك</span> · من شركة أساس للذكاء الاصطناعي &copy; <span class="num">2026</span> | Himaak by ASAAS AI
     </div>
   </footer>
 
   <!-- ───────── Core JavaScript Engine ───────── -->
   <script>
+{SAFE_RENDER_JS}
     const REPORTS_DATA = {reports_json_str};
     const ASST_FACES = {{
       smile: 'data:image/webp;base64,{asst_b64["face_smile"]}',
@@ -833,6 +827,8 @@ html_content = f"""<!DOCTYPE html>
     let currentLang = 'ar';
     let currentReportScore = 52;
     let currentTargetUrl = "https://example-corp.ai-asaas.com";
+    let currentReleaseStatus = 'blocked';
+    let currentCounts = {{ high: 0, med: 0, low: 0, info: 0 }};
     let isAssistantOpen = false;
     let assistantChatHistory = [];
 
@@ -852,145 +848,180 @@ html_content = f"""<!DOCTYPE html>
       }}
     }}
 
-    // Render report data into UI
+    // Release policy — mirrors assess_release() in scripts/generate_report.py
+    function assessRelease(high, med, low) {{
+      const score = Math.max(0, Math.min(100, 100 - (high * 25 + med * 10 + low * 3)));
+      let status;
+      if (score >= 90) status = {{ color: 'var(--paid)', ar: 'ممتاز / آمن', en: 'Secure / Excellent' }};
+      else if (score >= 75) status = {{ color: 'var(--brand-gold)', ar: 'جيد / يتطلب معالجة طفيفة', en: 'Moderate / Minor Issues' }};
+      else if (score >= 50) status = {{ color: 'var(--partial)', ar: 'متوسط / مخاطر محتملة', en: 'Warning / Action Required' }};
+      else status = {{ color: 'var(--unpaid)', ar: 'حرج / يتطلب تدخلاً عاجلاً', en: 'Critical / Urgent Action Needed' }};
+      const release = (high > 0 || score < 50) ? 'blocked' : (med > 0 ? 'conditional' : 'approved');
+      return {{ score, status, release }};
+    }}
+
+    const RISK_META = {{
+      3: {{ badge: 'pill--high', ar: 'عالي الخطورة', en: 'High' }},
+      2: {{ badge: 'pill--medium', ar: 'متوسط الخطورة', en: 'Medium' }},
+      1: {{ badge: 'pill--low', ar: 'منخفض الخطورة', en: 'Low' }},
+      0: {{ badge: 'pill--info', ar: 'معلوماتي', en: 'Info' }}
+    }};
+
+    function riskCodeOf(a) {{
+      const rc = parseInt(a && a.riskcode, 10);
+      return [0, 1, 2, 3].includes(rc) ? rc : 0;
+    }}
+
+    function asArray(value) {{
+      if (value === undefined || value === null) return [];
+      return Array.isArray(value) ? value : [value];
+    }}
+
+    // Collects alerts from every site in the report (ZAP can scan several), highest risk first.
+    function normalizeReport(data) {{
+      const targets = [];
+      const alerts = [];
+      asArray(data && data.site).forEach(site => {{
+        if (!site || typeof site !== 'object') return;
+        if (site['@name']) targets.push(String(site['@name']));
+        asArray(site.alerts).forEach(a => {{ if (a && typeof a === 'object') alerts.push(a); }});
+      }});
+      alerts.sort((x, y) => riskCodeOf(y) - riskCodeOf(x));
+      return {{ targets, alerts }};
+    }}
+
+    // Render report data into UI. Everything taken from the report is written as text.
     function renderReport(data) {{
-      const sites = data.site || [];
-      const site = sites[0] || {{}};
-      const targetUrl = site["@name"] || "https://example-corp.ai-asaas.com";
-      const zapVer = data["@version"] || "OWASP ZAP 2.14.0";
-      const timestamp = data["@generated"] || new Date().toLocaleString();
+      const report = normalizeReport(data);
+      const targetUrl = report.targets.join(', ') || '—';
+      const zapVer = String((data && data['@version']) || 'OWASP ZAP');
+      const timestamp = String((data && data['@generated']) || new Date().toLocaleString());
 
       currentTargetUrl = targetUrl;
-      document.getElementById('displayTargetUrl').innerText = targetUrl;
-      document.getElementById('displayTargetUrl').href = targetUrl;
-      document.getElementById('displayZapVersion').innerText = "Engine: " + zapVer;
-      document.getElementById('displayTimestamp').innerText = timestamp;
-      document.getElementById('targetUrlInput').value = targetUrl;
+      const targetLink = document.getElementById('displayTargetUrl');
+      targetLink.textContent = targetUrl;
+      targetLink.href = safeHttpUrl(report.targets[0]) || '#';
+      document.getElementById('displayZapVersion').textContent = 'Engine: ' + zapVer;
+      document.getElementById('displayTimestamp').textContent = timestamp;
+      document.getElementById('targetUrlInput').value = safeHttpUrl(report.targets[0]) || '';
       updateCliCommands();
 
-      const rawAlerts = site.alerts || [];
-      const alerts = Array.isArray(rawAlerts) ? rawAlerts : [rawAlerts];
+      const alerts = report.alerts;
       currentAlertsList = alerts;
 
       let high = 0, med = 0, low = 0, info = 0;
       alerts.forEach(a => {{
-        const rc = parseInt(a.riskcode || 0);
+        const rc = riskCodeOf(a);
         if (rc === 3) high++;
         else if (rc === 2) med++;
         else if (rc === 1) low++;
         else info++;
       }});
+      currentCounts = {{ high, med, low, info }};
 
-      document.getElementById('statHigh').innerText = high;
-      document.getElementById('statMed').innerText = med;
-      document.getElementById('statLow').innerText = low;
-      document.getElementById('statInfo').innerText = info;
+      document.getElementById('statHigh').textContent = high;
+      document.getElementById('statMed').textContent = med;
+      document.getElementById('statLow').textContent = low;
+      document.getElementById('statInfo').textContent = info;
 
-      document.getElementById('filterCountAll').innerText = alerts.length;
-      document.getElementById('filterCountHigh').innerText = high;
-      document.getElementById('filterCountMed').innerText = med;
-      document.getElementById('filterCountLow').innerText = low;
-      document.getElementById('filterCountInfo').innerText = info;
+      document.getElementById('filterCountAll').textContent = alerts.length;
+      document.getElementById('filterCountHigh').textContent = high;
+      document.getElementById('filterCountMed').textContent = med;
+      document.getElementById('filterCountLow').textContent = low;
+      document.getElementById('filterCountInfo').textContent = info;
 
-      // Score calculation
-      const deduction = (high * 25) + (med * 10) + (low * 3);
-      const score = Math.max(0, Math.min(100, 100 - deduction));
+      const assessment = assessRelease(high, med, low);
+      const score = assessment.score;
       currentReportScore = score;
-      document.getElementById('scoreNumber').innerText = score;
+      currentReleaseStatus = assessment.release;
+      document.getElementById('scoreNumber').textContent = score;
 
       const circumference = 251.32;
       const offset = circumference - (circumference * score / 100);
       const circleFill = document.getElementById('scoreCircleFill');
       circleFill.style.strokeDashoffset = offset;
 
-      let statusColor = "var(--paid)", statusAr = "ممتاز / آمن", statusEn = "Secure / Excellent";
-      if (score < 50) {{
-        statusColor = "var(--unpaid)";
-        statusAr = "حرج / يتطلب تدخلاً عاجلاً";
-        statusEn = "Critical / Urgent Action Needed";
-      }} else if (score < 75) {{
-        statusColor = "var(--partial)";
-        statusAr = "متوسط / مخاطر محتملة";
-        statusEn = "Warning / Action Required";
-      }} else if (score < 90) {{
-        statusColor = "var(--brand-gold)";
-        statusAr = "جيد / يتطلب معالجة طفيفة";
-        statusEn = "Moderate / Minor Issues";
-      }}
-
+      const statusColor = assessment.status.color;
       circleFill.setAttribute('stroke', statusColor);
       document.getElementById('scoreValueText').style.color = statusColor;
       const statusBadge = document.getElementById('scoreStatusBadge');
       statusBadge.style.borderColor = statusColor;
       statusBadge.style.color = statusColor;
       const statusText = document.getElementById('scoreStatusText');
-      statusText.setAttribute('data-ar', statusAr);
-      statusText.setAttribute('data-en', statusEn);
-      statusText.innerText = currentLang === 'ar' ? statusAr : statusEn;
-      updateReleaseGate(high, med);
-
+      statusText.setAttribute('data-ar', assessment.status.ar);
+      statusText.setAttribute('data-en', assessment.status.en);
+      statusText.textContent = currentLang === 'ar' ? assessment.status.ar : assessment.status.en;
+      updateReleaseGate(assessment.release, high);
 
       // Render Findings List
       const container = document.getElementById('findingsList');
-      container.innerHTML = '';
+      container.textContent = '';
 
       if (alerts.length === 0) {{
         container.innerHTML = `
           <div class="card glass empty">
             <div class="empty__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8 12.3 2.8 2.8L16.2 9.6"/></svg></div>
-            <h3 data-ar="لم يتم رصد أي ثغرات أمنية" data-en="No Vulnerabilities Detected">لم يتم رصد أي ثغرات أمنية</h3>
-            <p data-ar="اجتاز هذا الهدف كافة اختبارات الفحص بنجاح تام وفق معايير OWASP." data-en="The target successfully passed baseline scans according to OWASP standards.">اجتاز هذا الهدف كافة اختبارات الفحص بنجاح تام وفق معايير OWASP.</p>
+            <h3 data-ar="لم يتم رصد أي ثغرات أمنية" data-en="No Vulnerabilities Detected">${{currentLang === 'en' ? 'No Vulnerabilities Detected' : 'لم يتم رصد أي ثغرات أمنية'}}</h3>
+            <p data-ar="اجتاز هذا الهدف كافة اختبارات الفحص بنجاح تام وفق معايير OWASP." data-en="The target successfully passed baseline scans according to OWASP standards.">${{currentLang === 'en' ? 'The target successfully passed baseline scans according to OWASP standards.' : 'اجتاز هذا الهدف كافة اختبارات الفحص بنجاح تام وفق معايير OWASP.'}}</p>
           </div>
         `;
+        applyFilters();
         return;
       }}
 
       alerts.forEach((a, idx) => {{
-        const rc = parseInt(a.riskcode || 0);
-        let badgeClass = "pill--info", riskLabelAr = "معلوماتي", riskLabelEn = "Info";
-        if (rc === 3) {{ badgeClass = "pill--high"; riskLabelAr = "عالي الخطورة"; riskLabelEn = "High"; }}
-        else if (rc === 2) {{ badgeClass = "pill--medium"; riskLabelAr = "متوسط الخطورة"; riskLabelEn = "Medium"; }}
-        else if (rc === 1) {{ badgeClass = "pill--low"; riskLabelAr = "منخفض الخطورة"; riskLabelEn = "Low"; }}
-
-        const name = a.name || a.alert || "Unknown Issue";
-        const nameAr = a.name_ar || name;
-        const count = a.count || (a.instances ? a.instances.length : 1);
-        const cwe = a.cweid ? `<span class="pill pill--tag">CWE-${{a.cweid}}</span>` : '';
+        const rc = riskCodeOf(a);
+        const meta = RISK_META[rc];
+        const name = String(a.name || a.alert || 'Unknown Issue');
+        const nameAr = String(a.name_ar || name);
+        const count = parseInt(a.count, 10) || (a.instances ? asArray(a.instances).length : 1);
+        const cwe = /^[0-9]+$/.test(String(a.cweid || '')) ? String(a.cweid) : '';
 
         const card = document.createElement('div');
-        card.className = "finding-card glass";
+        card.className = 'finding-card glass';
         card.setAttribute('data-risk', rc);
-        card.setAttribute('data-search', `${{name}} ${{nameAr}} ${{a.cweid || ''}} ${{a.pluginid || ''}}`);
+        card.setAttribute('data-search', `${{name}} ${{nameAr}} ${{cwe}} ${{a.pluginid || ''}}`);
 
         const primaryTitle = currentLang === 'en' ? name : nameAr;
         const secondaryTitle = currentLang === 'en' ? (nameAr !== name ? `(${{nameAr}})` : '') : `(${{name}})`;
-        const inspectBtnText = currentLang === 'en' ? 'Inspect Finding Details' : 'معاينة التقرير والتفاصيل';
-        const countWord = currentLang === 'en' ? 'instances' : 'حالة';
 
+        // Static markup only; scan values are filled in below with textContent.
         card.innerHTML = `
-          <div class="finding-header" onclick="openModal(${{idx}})">
+          <div class="finding-header">
             <div class="finding-title-group">
-              <span class="pill ${{badgeClass}}">
-                <span data-ar="${{riskLabelAr}}" data-en="${{riskLabelEn}}">${{currentLang === 'ar' ? riskLabelAr : riskLabelEn}}</span>
+              <span class="pill ${{meta.badge}}">
+                <span data-ar="${{meta.ar}}" data-en="${{meta.en}}"></span>
               </span>
-              <div class="finding-name" title="${{name}}">
-                <span class="title-primary">${{primaryTitle}}</span>
-                <span class="title-secondary subtle hide-mobile" style="font-size: 13px; margin-inline-start: 6px;">${{secondaryTitle}}</span>
+              <div class="finding-name">
+                <span class="title-primary"></span>
+                <span class="title-secondary subtle hide-mobile" style="font-size: 13px; margin-inline-start: 6px;"></span>
               </div>
             </div>
             <div class="finding-meta">
-              <span class="pill pill--tag"><span class="num">${{count}}</span> <span data-ar="حالة" data-en="instances">${{countWord}}</span></span>
-              ${{cwe}}
-              <button class="finding-action-btn" onclick="event.stopPropagation(); openModal(${{idx}})">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><circle cx="12" cy="12" r="3"/><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7Z"/></svg>
-                <span data-ar="معاينة التقرير والتفاصيل" data-en="Inspect Finding Details">${{inspectBtnText}}</span>
+              <span class="pill pill--tag"><span class="num"></span> <span data-ar="حالة" data-en="instances"></span></span>
+              <span class="pill pill--tag js-cwe"></span>
+              <button class="finding-action-btn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><circle cx="12" cy="12" r="3"/><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7S2.5 12 2.5 12Z"/></svg>
+                <span data-ar="معاينة التقرير والتفاصيل" data-en="Inspect Finding Details"></span>
               </button>
             </div>
           </div>
         `;
+        card.querySelector('.pill span').textContent = currentLang === 'ar' ? meta.ar : meta.en;
+        card.querySelector('.finding-name').title = name;
+        card.querySelector('.title-primary').textContent = primaryTitle;
+        card.querySelector('.title-secondary').textContent = secondaryTitle;
+        card.querySelector('.finding-meta .num').textContent = count;
+        card.querySelector('.finding-meta [data-ar="حالة"]').textContent = currentLang === 'en' ? 'instances' : 'حالة';
+        const cweEl = card.querySelector('.js-cwe');
+        if (cwe) cweEl.textContent = 'CWE-' + cwe; else cweEl.remove();
+        card.querySelector('.finding-action-btn span').textContent = currentLang === 'en' ? 'Inspect Finding Details' : 'معاينة التقرير والتفاصيل';
 
+        card.querySelector('.finding-header').addEventListener('click', () => openModal(idx));
+        card.querySelector('.finding-action-btn').addEventListener('click', (ev) => {{ ev.stopPropagation(); openModal(idx); }});
         container.appendChild(card);
       }});
+      applyFilters();
     }}
 
     // Modal Inspector Logic
@@ -999,37 +1030,34 @@ html_content = f"""<!DOCTYPE html>
       if (!alert) return;
       currentAlert = alert;
 
-      const rc = parseInt(alert.riskcode || 0);
-      let badgeClass = "pill--info", riskLabelAr = "معلوماتي", riskLabelEn = "Info";
-      if (rc === 3) {{ badgeClass = "pill--high"; riskLabelAr = "عالي الخطورة"; riskLabelEn = "High"; }}
-      else if (rc === 2) {{ badgeClass = "pill--medium"; riskLabelAr = "متوسط الخطورة"; riskLabelEn = "Medium"; }}
-      else if (rc === 1) {{ badgeClass = "pill--low"; riskLabelAr = "منخفض الخطورة"; riskLabelEn = "Low"; }}
+      const rc = riskCodeOf(alert);
+      const meta = RISK_META[rc];
 
       const riskBadge = document.getElementById('mRiskBadge');
-      riskBadge.className = "pill " + badgeClass;
-      riskBadge.innerText = currentLang === 'ar' ? riskLabelAr : riskLabelEn;
+      riskBadge.className = 'pill ' + meta.badge;
+      riskBadge.textContent = currentLang === 'en' ? meta.en : meta.ar;
 
-      document.getElementById('mCweBadge').innerText = alert.cweid ? "CWE-" + alert.cweid : "CWE-N/A";
-      const count = alert.count || (alert.instances ? alert.instances.length : 1);
-      document.getElementById('mCountBadge').innerText = count + (currentLang === 'ar' ? ' حالة' : ' instances');
+      const cwe = /^[0-9]+$/.test(String(alert.cweid || '')) ? String(alert.cweid) : '';
+      document.getElementById('mCweBadge').textContent = cwe ? 'CWE-' + cwe : 'CWE-N/A';
+      const count = parseInt(alert.count, 10) || (alert.instances ? asArray(alert.instances).length : 1);
+      document.getElementById('mCountBadge').textContent = count + (currentLang === 'en' ? ' instances' : ' حالة');
 
-      const name = alert.name || alert.alert || "Unknown Issue";
-      const nameAr = alert.name_ar || name;
-      document.getElementById('mTitle').innerText = currentLang === 'en' ? name : nameAr;
-      document.getElementById('mSubTitle').innerText = currentLang === 'en' ? (nameAr + (alert.pluginid ? ' - ID: ' + alert.pluginid : '')) : (name + (alert.pluginid ? ' - ID: ' + alert.pluginid : ''));
-      document.getElementById('mRiskBadge').innerText = currentLang === 'en' ? riskLabelEn : riskLabelAr;
-      document.getElementById('mCountBadge').innerText = count + (currentLang === 'en' ? ' instances' : ' حالة');
+      const name = String(alert.name || alert.alert || 'Unknown Issue');
+      const nameAr = String(alert.name_ar || name);
+      const idSuffix = alert.pluginid ? ' - ID: ' + alert.pluginid : '';
+      document.getElementById('mTitle').textContent = currentLang === 'en' ? name : nameAr;
+      document.getElementById('mSubTitle').textContent = (currentLang === 'en' ? nameAr : name) + idSuffix;
 
-      document.getElementById('mDesc').innerHTML = alert.desc || '-';
-      document.getElementById('mSolution').innerHTML = alert.solution || '<p>تطبيق أفضل الممارسات المعتمدة وإجراء مراجعة أمنية للكود المصدري.</p>';
-      document.getElementById('mRefs').innerHTML = alert.reference || '<p class="subtle">لا توجد روابط مرجعية مسجلة.</p>';
+      setPlainText(document.getElementById('mDesc'), htmlToText(alert.desc), '-');
+      setPlainText(document.getElementById('mSolution'), htmlToText(alert.solution), 'تطبيق أفضل الممارسات المعتمدة وإجراء مراجعة أمنية للكود المصدري.');
+      renderReferences(document.getElementById('mRefs'), htmlToText(alert.reference), 'لا توجد روابط مرجعية مسجلة.');
 
       // Structured Remediation Code Box
       const customRemed = document.getElementById('mCustomRemediation');
       const remedCode = alert.remediation_code || (alert.remediation_guide && alert.remediation_guide.code);
       if (remedCode) {{
         customRemed.style.display = 'block';
-        document.getElementById('mCustomRemediationCode').innerText = remedCode;
+        document.getElementById('mCustomRemediationCode').textContent = String(remedCode);
       }} else {{
         customRemed.style.display = 'none';
       }}
@@ -1039,40 +1067,30 @@ html_content = f"""<!DOCTYPE html>
       const integ = document.getElementById('mImpactInteg');
       const avail = document.getElementById('mImpactAvail');
       if (rc === 3) {{
-        conf.innerText = "حرج (Critical)"; conf.style.color = "var(--unpaid)";
-        integ.innerText = "مرتفع (High)"; integ.style.color = "var(--unpaid)";
-        avail.innerText = "متوسط (Medium)"; avail.style.color = "var(--partial)";
+        conf.textContent = 'حرج (Critical)'; conf.style.color = 'var(--unpaid)';
+        integ.textContent = 'مرتفع (High)'; integ.style.color = 'var(--unpaid)';
+        avail.textContent = 'متوسط (Medium)'; avail.style.color = 'var(--partial)';
       }} else if (rc === 2) {{
-        conf.innerText = "متوسط (Medium)"; conf.style.color = "var(--partial)";
-        integ.innerText = "متوسط (Medium)"; integ.style.color = "var(--partial)";
-        avail.innerText = "منخفض (Low)"; avail.style.color = "var(--paid)";
+        conf.textContent = 'متوسط (Medium)'; conf.style.color = 'var(--partial)';
+        integ.textContent = 'متوسط (Medium)'; integ.style.color = 'var(--partial)';
+        avail.textContent = 'منخفض (Low)'; avail.style.color = 'var(--paid)';
       }} else {{
-        conf.innerText = "منخفض (Low)"; conf.style.color = "var(--paid)";
-        integ.innerText = "منخفض (Low)"; integ.style.color = "var(--paid)";
-        avail.innerText = "محدود (Minimal)"; avail.style.color = "var(--paid)";
+        conf.textContent = 'منخفض (Low)'; conf.style.color = 'var(--paid)';
+        integ.textContent = 'منخفض (Low)'; integ.style.color = 'var(--paid)';
+        avail.textContent = 'محدود (Minimal)'; avail.style.color = 'var(--paid)';
       }}
 
       // Instances list
       const instContainer = document.getElementById('mInstancesList');
-      instContainer.innerHTML = '';
-      const instances = alert.instances || [];
+      instContainer.textContent = '';
+      const instances = asArray(alert.instances).filter(inst => inst && typeof inst === 'object');
       if (instances.length === 0) {{
-        instContainer.innerHTML = '<p class="subtle">لا توجد حالات محددة مسجلة.</p>';
+        const empty = document.createElement('p');
+        empty.className = 'subtle';
+        empty.textContent = 'لا توجد حالات محددة مسجلة.';
+        instContainer.appendChild(empty);
       }} else {{
-        instances.forEach((inst, i) => {{
-          const card = document.createElement('div');
-          card.className = "instance-card";
-          card.innerHTML = `
-            <div class="instance-card__header">
-              <span class="pill pill--tag">#${{i + 1}} - Method: ${{inst.method || 'GET'}}</span>
-              <span class="instance-uri">${{inst.uri || '-'}}</span>
-            </div>
-            ${{inst.param ? `<div style="font-size: 13px;"><strong>المعامل المتأثر (Parameter):</strong> <code>${{inst.param}}</code></div>` : ''}}
-            ${{inst.attack ? `<div style="font-size: 13px;"><strong>حمولة الهجوم (Payload):</strong> <code>${{inst.attack}}</code></div>` : ''}}
-            ${{inst.evidence ? `<div style="font-size: 13px; margin-top: 4px;"><strong>الدليل المكتشف (Evidence):</strong><div class="evidence-box"><code>${{inst.evidence}}</code></div></div>` : ''}}
-          `;
-          instContainer.appendChild(card);
-        }});
+        instances.forEach((inst, i) => instContainer.appendChild(buildInstanceCard(inst, i)));
       }}
 
       switchModalTab('overview');
@@ -1094,28 +1112,28 @@ html_content = f"""<!DOCTYPE html>
 
     function copyFindingDetails() {{
       if (!currentAlert) return;
-      const text = `[تقرير أمان أساس]
+      const text = `[تقرير أمان حماك]
 الثغرة: ${{currentAlert.name_ar || currentAlert.name}} (${{currentAlert.name}})
 مستوى الخطورة: ${{currentAlert.riskcode}}
 CWE: CWE-${{currentAlert.cweid || 'N/A'}}
 الهدف: ${{currentTargetUrl}}
-الوصف: ${{currentAlert.desc ? currentAlert.desc.replace(/<[^>]+>/g, '') : ''}}`;
-      navigator.clipboard.writeText(text).then(() => {{
+الوصف: ${{htmlToText(currentAlert.desc)}}`;
+      safeCopy(text, () => {{
         const btn = document.getElementById('copyBtnText');
-        const orig = btn.innerText;
-        btn.innerText = "✓ تم النسخ بنجاح";
-        setTimeout(() => {{ btn.innerText = orig; }}, 2000);
+        const orig = btn.textContent;
+        btn.textContent = "✓ تم النسخ بنجاح";
+        setTimeout(() => {{ btn.textContent = orig; }}, 2000);
       }});
     }}
 
     function copyRemediationCode() {{
       const codeEl = document.getElementById('mCustomRemediationCode');
       if (!codeEl) return;
-      navigator.clipboard.writeText(codeEl.innerText).then(() => {{
+      safeCopy(codeEl.textContent, () => {{
         const btn = document.getElementById('copyRemediationBtnText');
-        const orig = btn.innerText;
-        btn.innerText = "✓ تم نسخ الكود";
-        setTimeout(() => {{ btn.innerText = orig; }}, 2000);
+        const orig = btn.textContent;
+        btn.textContent = "✓ تم نسخ الكود";
+        setTimeout(() => {{ btn.textContent = orig; }}, 2000);
       }});
     }}
 
@@ -1128,13 +1146,14 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
     }}
 
     function updateCliCommands() {{
-      const url = document.getElementById('targetUrlInput').value || 'https://example.com';
-      document.getElementById('cliCommandText').innerText = `gh workflow run zap-scan.yml -f target_url="${{url}}"`;
+      // Only a plain http(s) URL goes into the command, single-quoted for the shell.
+      const url = safeHttpUrl(document.getElementById('targetUrlInput').value.trim()) || 'https://example.com';
+      const quoted = "'" + url.replace(/'/g, "'\\\\''") + "'";
+      document.getElementById('cliCommandText').textContent = `gh workflow run zap-scan.yml -f target_url=${{quoted}}`;
     }}
 
     function copyCliCommand() {{
-      const cmd = document.getElementById('cliCommandText').innerText;
-      navigator.clipboard.writeText(cmd);
+      safeCopy(document.getElementById('cliCommandText').textContent);
     }}
 
     // Dropzone logic
@@ -1206,7 +1225,8 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       filterByRisk('all');
     }}
 
-    function updateReleaseGate(highCount, medCount) {{
+    // release is 'blocked' | 'conditional' | 'approved', as decided by assessRelease().
+    function updateReleaseGate(release, highCount) {{
       const card = document.getElementById('releaseDecisionCard');
       const icon = document.getElementById('releaseIcon');
       const title = document.getElementById('releaseTitleAr');
@@ -1214,31 +1234,34 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       const badge = document.getElementById('releaseBadge');
       const timeline = document.getElementById('releaseTimeline');
       if (!card || !badge) return;
+      const ar = currentLang === 'ar';
 
-      if (highCount > 0) {{
+      if (release === 'blocked') {{
         card.style.borderColor = 'var(--unpaid)';
-        if (icon) icon.innerText = '🔴';
-        if (title) title.innerText = currentLang === 'ar' ? 'حظر الإطلاق للإنتاج (Release Blocked)' : 'Release Blocked (P1 Blocker)';
-        if (desc) desc.innerText = currentLang === 'ar' ? 'تم رصد ثغرات أمنية عالية الخطورة. يُمنع النشر للإنتاج منعاً باتاً حتى اكتمال المعالجة والتحقق.' : 'High-risk vulnerabilities detected. Production release is strictly blocked until remediated.';
+        if (icon) icon.textContent = '🔴';
+        if (title) title.textContent = ar ? 'حظر الإطلاق للإنتاج (Release Blocked)' : 'Release Blocked (P1 Blocker)';
+        if (desc) desc.textContent = highCount > 0
+          ? (ar ? 'تم رصد ثغرات أمنية عالية الخطورة. يُمنع النشر للإنتاج حتى اكتمال المعالجة والتحقق.' : 'High-risk vulnerabilities detected. Production release is blocked until remediated.')
+          : (ar ? 'مؤشر السلامة أقل من 50. يُمنع النشر للإنتاج حتى معالجة الثغرات ورفع المؤشر.' : 'Security score is below 50. Production release is blocked until findings are remediated.');
         badge.className = 'pill pill--unpaid';
-        badge.innerText = 'BLOCKED';
-        if (timeline) timeline.innerText = currentLang === 'ar' ? 'مهلة الترقيع: فوري قبل النشر' : 'SLA: Immediate before deployment';
-      }} else if (medCount > 0) {{
+        badge.textContent = 'BLOCKED';
+        if (timeline) timeline.textContent = ar ? 'مهلة الترقيع: فوري قبل النشر' : 'SLA: Immediate before deployment';
+      }} else if (release === 'conditional') {{
         card.style.borderColor = 'var(--partial)';
-        if (icon) icon.innerText = '🟡';
-        if (title) title.innerText = currentLang === 'ar' ? 'موافقة مشروطة للنشر (Conditional Release)' : 'Conditional Release (Grace Period)';
-        if (desc) desc.innerText = currentLang === 'ar' ? 'توجد ملاحظات أمنية متوسطة تتطلب جدولة المعالجة خلال مهلة زمنية محددة.' : 'Medium risk findings identified. Release approved under 14-day remediation grace period.';
+        if (icon) icon.textContent = '🟡';
+        if (title) title.textContent = ar ? 'موافقة مشروطة للنشر (Conditional Release)' : 'Conditional Release (Grace Period)';
+        if (desc) desc.textContent = ar ? 'توجد ملاحظات أمنية متوسطة تتطلب جدولة المعالجة خلال مهلة زمنية محددة.' : 'Medium risk findings identified. Release approved under a 14-day remediation grace period.';
         badge.className = 'pill pill--partial';
-        badge.innerText = 'CONDITIONAL';
-        if (timeline) timeline.innerText = currentLang === 'ar' ? 'مهلة الترقيع: 14 يوماً' : 'SLA: 14 calendar days';
+        badge.textContent = 'CONDITIONAL';
+        if (timeline) timeline.textContent = ar ? 'مهلة الترقيع: 14 يوماً' : 'SLA: 14 calendar days';
       }} else {{
         card.style.borderColor = 'var(--paid)';
-        if (icon) icon.innerText = '🟢';
-        if (title) title.innerText = currentLang === 'ar' ? 'معتمد للنشر بالإنتاج (Approved for Production)' : 'Approved for Production (Clean)';
-        if (desc) desc.innerText = currentLang === 'ar' ? 'اجتاز النظام كافة بوابات الفحص الأمني بنجاح تام وبدون أي ثغرات حرجة أو متوسطة.' : 'All security quality gates passed successfully. System is certified for release.';
+        if (icon) icon.textContent = '🟢';
+        if (title) title.textContent = ar ? 'معتمد للنشر بالإنتاج (Approved for Production)' : 'Approved for Production (Clean)';
+        if (desc) desc.textContent = ar ? 'اجتاز النظام بوابات الفحص الأمني بدون ثغرات عالية أو متوسطة الخطورة.' : 'All security quality gates passed. No high or medium risk findings.';
         badge.className = 'pill pill--paid';
-        badge.innerText = 'APPROVED';
-        if (timeline) timeline.innerText = currentLang === 'ar' ? 'الحالة: مستوفٍ لكافة المعايير' : 'Status: Fully Compliant';
+        badge.textContent = 'APPROVED';
+        if (timeline) timeline.textContent = ar ? 'الحالة: مستوفٍ لكافة المعايير' : 'Status: Fully Compliant';
       }}
     }}
 
@@ -1251,19 +1274,22 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       const activeRisk = activeFilterBtn ? activeFilterBtn.getAttribute('data-filter') : 'all';
       const searchVal = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
 
-      document.querySelectorAll('#findingsList .finding-card').forEach(card => {{
+      const cards = document.querySelectorAll('#findingsList .finding-card');
+      let visible = 0;
+      cards.forEach(card => {{
         const risk = card.getAttribute('data-risk');
         const search = (card.getAttribute('data-search') || '').toLowerCase();
 
         const matchRisk = activeRisk === 'all' || risk === activeRisk;
         const matchSearch = !searchVal || search.includes(searchVal);
 
-        if (matchRisk && matchSearch) {{
-          card.style.display = 'block';
-        }} else {{
-          card.style.display = 'none';
-        }}
+        card.style.display = (matchRisk && matchSearch) ? 'block' : 'none';
+        if (matchRisk && matchSearch) visible++;
       }});
+
+      // "No results" only when there are findings but the filter hides all of them.
+      const emptyState = document.getElementById('filterEmptyState');
+      if (emptyState) emptyState.style.display = (cards.length > 0 && visible === 0) ? 'block' : 'none';
     }}
 
     // ───────── REAL ASAAS ASSISTANT ENGINE ─────────
@@ -1305,9 +1331,9 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       const thread = document.getElementById('asstThread');
       thread.innerHTML = `
         <div class="assistant-welcome" id="asstWelcome">
-          <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد أساس يرحب بك" draggable="false">
+          <img src="data:image/webp;base64,{asst_b64['robot_wave']}" class="assistant-welcome__robot" alt="مساعد حماك يرحب بك" draggable="false">
           <h3 id="asstGreeting">${{new Date().getHours() < 12 ? 'صباح الخير يا مهندس الأمان' : 'مساء الخير يا مهندس الأمان'}}</h3>
-          <p class="assistant-welcome__lead">أنا مساعد أساس الذكي، كيف أقدر أساعدك اليوم في مراجعة التقرير الأمني؟</p>
+          <p class="assistant-welcome__lead">أنا مساعد حماك الذكي، كيف أقدر أساعدك اليوم في مراجعة التقرير الأمني؟</p>
           <p>اسألني عن أي ثغرة أو اطلب كود الحماية المعياري لترويسات الخادم وتوصيات المعالجة.</p>
 
           <div class="assistant-welcome__suggestions">
@@ -1382,8 +1408,8 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       const typing = document.createElement('div');
       typing.className = "bubble bubble--assistant";
       typing.innerHTML = `
-        <img src="${{ASST_FACES.waiting}}" class="assistant-face assistant-face--sm" alt="أساس يفكر" draggable="false">
-        <span class="typing" role="status" aria-label="أساس يكتب..."><i/><i/><i/></span>
+        <img src="${{ASST_FACES.waiting}}" class="assistant-face assistant-face--sm" alt="حماك يفكر" draggable="false">
+        <span class="typing" role="status" aria-label="حماك يكتب..."><i/><i/><i/></span>
       `;
       thread.appendChild(typing);
       thread.scrollTo({{ top: thread.scrollHeight, behavior: 'smooth' }});
@@ -1396,7 +1422,7 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       bubble.className = "bubble bubble--assistant";
       const faceSrc = ASST_FACES[mood] || ASST_FACES.happy;
       bubble.innerHTML = `
-        <img src="${{faceSrc}}" class="assistant-face assistant-face--sm" alt="وجه أساس" draggable="false">
+        <img src="${{faceSrc}}" class="assistant-face assistant-face--sm" alt="وجه حماك" draggable="false">
         <div class="bubble__body">
           <div class="bubble__text" style="font-size: 13.5px; line-height: 1.6;">${{htmlText}}</div>
         </div>
@@ -1405,23 +1431,19 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
       thread.scrollTo({{ top: thread.scrollHeight, behavior: 'smooth' }});
     }}
 
-    function escapeHtml(str) {{
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }}
-
     function generateAssistantAIResponse(query) {{
       const qLower = query.toLowerCase();
       let reply = "";
       let mood = "happy";
 
-      const highCount = currentAlertsList.filter(a => parseInt(a.riskcode || 0) === 3).length;
-      const medCount = currentAlertsList.filter(a => parseInt(a.riskcode || 0) === 2).length;
-      const lowCount = currentAlertsList.filter(a => parseInt(a.riskcode || 0) === 1).length;
-      const infoCount = currentAlertsList.filter(a => parseInt(a.riskcode || 0) === 0).length;
+      const highCount = currentAlertsList.filter(a => riskCodeOf(a) === 3).length;
+      const medCount = currentAlertsList.filter(a => riskCodeOf(a) === 2).length;
+      const lowCount = currentAlertsList.filter(a => riskCodeOf(a) === 1).length;
+      const infoCount = currentAlertsList.filter(a => riskCodeOf(a) === 0).length;
 
       if (qLower.includes('لخص') || qLower.includes('وضع') || qLower.includes('تقرير') || qLower.includes('نتيجة') || qLower.includes('score')) {{
         mood = currentReportScore >= 80 ? "celebrate" : "waiting";
-        reply = `📊 <strong>ملخص تقرير الفحص الأمني للهدف (${{currentTargetUrl}}):</strong><br><br>` +
+        reply = `📊 <strong>ملخص تقرير الفحص الأمني للهدف (${{escapeHtml(currentTargetUrl)}}):</strong><br><br>` +
                 `• <strong>مؤشر السلامة:</strong> ${{currentReportScore}}/100<br>` +
                 `• <strong>الثغرات عالية الخطورة:</strong> ${{highCount}} ثغرة<br>` +
                 `• <strong>الثغرات متوسطة الخطورة:</strong> ${{medCount}} ثغرة<br>` +
@@ -1430,13 +1452,13 @@ CWE: CWE-${{currentAlert.cweid || 'N/A'}}
                 (highCount > 0 ? `🚨 <em>تنبيه عاجل:</em> يتطلب النظام تدخلاً هندسياً لمعالجة الثغرات عالية الخطورة قبل الاعتماد.` : `✅ الامتثال الأمني العام للنظام في مستوى مطمئن.`);
       }}
       else if (qLower.includes('أخطر') || qLower.includes('حرجة') || qLower.includes('critical') || qLower.includes('high')) {{
-        const criticals = currentAlertsList.filter(a => parseInt(a.riskcode || 0) >= 2);
+        const criticals = currentAlertsList.filter(a => riskCodeOf(a) >= 2);
         if (criticals.length === 0) {{
           mood = "celebrate";
           reply = `✅ <strong>بشرى سارة:</strong> لا توجد أي ثغرات عالية أو متوسطة الخطورة في هذا التقرير! النظام يجتاز معايير الأمان الموصى بها.`;
         }} else {{
           mood = "waiting";
-          const names = criticals.map(c => `• <strong>${{c.name_ar || c.name}}</strong> (Risk: ${{c.riskcode === '3' ? 'عالي' : 'متوسط'}})`).join('<br>');
+          const names = criticals.map(c => `• <strong>${{escapeHtml(c.name_ar || c.name)}}</strong> (Risk: ${{riskCodeOf(c) === 3 ? 'عالي' : 'متوسط'}})`).join('<br>');
           reply = `⚠️ <strong>أبرز الثغرات التي تتطلب تدخلاً هندسياً عاجلاً:</strong><br><br>${{names}}<br><br>انقر على أي منها في جدول التقرير لمعاينة الدليل التقني وتوصيات التصحيح.`;
         }}
       }}
@@ -1454,7 +1476,7 @@ await client.query('SELECT * FROM users WHERE id = $1', [userId]);</code></pre>`
       }}
       else if (qLower.includes('csp') || qLower.includes('محتوى')) {{
         mood = "happy";
-        reply = `🔒 <strong>ترويسة سياسة أمان المحتوى (CSP) القياسية لأساس:</strong><br><br>` +
+        reply = `🔒 <strong>ترويسة سياسة أمان المحتوى (CSP) القياسية من حماك:</strong><br><br>` +
                 `<pre class="evidence-box"><code># Nginx Config:
 add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'none';" always;</code></pre>` +
                 `هذه الترويسة تمنع هجمات XSS وتمنع تضمين موقعك داخل إطارات Iframe ضارة (Anti-Clickjacking).`;
@@ -1474,29 +1496,31 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
                 `3. تعيين خاصية <code>SameSite=Strict; Secure; HttpOnly</code> لكوكيز الجلسة.`;
       }}
       else if (qLower.includes('مؤهل') || qLower.includes('إطلاق') || qLower.includes('إنتاج') || qLower.includes('release')) {{
-        if (highCount > 0) {{
+        const policy = `<br><br><em>سياسة حماك: يُحجب الإطلاق عند وجود أي ثغرة عالية الخطورة أو انخفاض المؤشر دون 50، ويكون مشروطاً عند وجود ثغرات متوسطة فقط.</em>`;
+        if (currentReleaseStatus === 'blocked') {{
           mood = "waiting";
           reply = `⛔ <strong>توصية قرار الإطلاق (Release Decision):</strong><br><br>` +
-                  `نوصي بـ <strong>حجب الإطلاق حالياً (Block Release)</strong> لوجود ${{highCount}} ثغرة عالية الخطورة. سياسة أساس الأمنية تشترط أن تكون الثغرات عالية الخطورة صفراً مع درجة سلامة لا تقل عن 85%.`;
-        }} else if (medCount > 0) {{
+                  `نوصي بـ <strong>حجب الإطلاق حالياً (Block Release)</strong> ` +
+                  (highCount > 0 ? `لوجود ${{highCount}} ثغرة عالية الخطورة.` : `لأن مؤشر السلامة (${{currentReportScore}}/100) أقل من 50.`) + policy;
+        }} else if (currentReleaseStatus === 'conditional') {{
           mood = "happy";
           reply = `⚠️ <strong>توصية قرار الإطلاق:</strong><br><br>` +
-                  `يمكن الإطلاق المشروط (Conditional Release) مع جدولة معالجة الثغرات متوسطة الخطورة (${{medCount}} ثغرة) خلال أسبوعين.`;
+                  `يمكن الإطلاق المشروط (Conditional Release) مع جدولة معالجة الثغرات متوسطة الخطورة (${{medCount}} ثغرة) خلال أسبوعين.` + policy;
         }} else {{
           mood = "celebrate";
           reply = `🚀 <strong>توصية قرار الإطلاق:</strong><br><br>` +
-                  `النظام <strong>مؤهل بالكامل للإطلاق في بيئة الإنتاج</strong>، ولم يتم رصد أي ثغرات مؤثرة تمنع الاعتماد.`;
+                  `النظام <strong>مؤهل بالكامل للإطلاق في بيئة الإنتاج</strong>، ولم يتم رصد أي ثغرات مؤثرة تمنع الاعتماد.` + policy;
         }}
       }}
       else if (qLower.includes('تحقق') || qLower.includes('checklist')) {{
-        reply = `📋 <strong>قائمة التحقق الأمني المعتمدة قبل الإطلاق (Asaas Baseline):</strong><br><br>` +
+        reply = `📋 <strong>قائمة التحقق الأمني المعتمدة قبل الإطلاق (Himaak Baseline):</strong><br><br>` +
                 `1. تفعيل ترويسات: CSP, HSTS, X-Content-Type-Options, X-Frame-Options.<br>` +
                 `2. تعيين خصائص الكوكيز الحساسة: <code>HttpOnly; Secure; SameSite=Strict</code>.<br>` +
                 `3. التحقق من رموز Anti-CSRF في جميع طلبات تعديل البيانات (POST/PUT/DELETE).<br>` +
                 `4. حجب معلومات إصدار الخادم (Server Header).`;
       }}
       else {{
-        reply = `🤖 بصفتي مساعد أساس الأمني، أنا هنا لمساعدتك في فهم كل تفاصيل هذا التقرير الأمني. ` +
+        reply = `🤖 بصفتي مساعد حماك الأمني، أنا هنا لمساعدتك في فهم كل تفاصيل هذا التقرير الأمني. ` +
                 `يمكنك سؤالي عن: كيفية ترقيع أي ثغرة واردة بالتقرير، إعدادات الخوادم المشفرة، أو شرح معايير CWE المرفقة.`;
       }}
 
@@ -1530,8 +1554,8 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
 
       // 2. Document Title
       document.title = lang === 'ar' 
-        ? 'منصة أتمتة الفحص الأمني المتقدم | شركة أساس للأمن السيبراني' 
-        : 'OWASP ZAP Security Assessment Platform | Asaas AI';
+        ? 'حِماك | منصة أتمتة الفحص الأمني المتقدم' 
+        : 'Himaak | OWASP ZAP Security Assessment Platform';
 
       // 3. Static elements with data-ar and data-en
       document.querySelectorAll('[data-ar][data-en]').forEach(el => {{
@@ -1574,16 +1598,16 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; prelo
       const asstInput = document.getElementById('asstInput');
       if (asstInput) {{
         asstInput.placeholder = lang === 'ar' 
-          ? 'اسأل مساعد أساس عن أي ثغرة أو خطة معالجة...' 
-          : 'Ask Asaas AI about any alert or remediation...';
+          ? 'اسأل مساعد حماك عن أي ثغرة أو خطة معالجة...' 
+          : 'Ask Himaak about any alert or remediation...';
       }}
 
       // 5. Assistant Greeting & Chips
       const asstGreet = document.getElementById('asstGreeting');
       if (asstGreet) {{
         asstGreet.innerText = lang === 'ar'
-          ? 'أهلاً بك! أنا مساعد أساس الذكي لتحليل ثغرات فحص OWASP ZAP وبوابات الجودة الأمنية. كيف يمكنني إرشادك اليوم؟'
-          : 'Welcome! I am Asaas Cyber Assistant for OWASP ZAP vulnerability analysis and release gates. How can I guide you today?';
+          ? 'أهلاً بك! أنا مساعد حماك الذكي لتحليل ثغرات فحص OWASP ZAP وبوابات الجودة الأمنية. كيف يمكنني إرشادك اليوم؟'
+          : 'Welcome! I am the Himaak security assistant for OWASP ZAP vulnerability analysis and release gates. How can I guide you today?';
       }}
 
       // 6. Update Theme Icon & button title

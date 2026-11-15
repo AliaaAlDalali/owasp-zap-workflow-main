@@ -1,0 +1,95 @@
+name: "🛡️ Himaak Security Scan"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Target URL to scan (http/https), e.g. https://example.com"
+        required: true
+        type: string
+      fail_on:
+        description: "Fail the run when the release decision is at least this severe"
+        required: false
+        default: "none"
+        type: choice
+        options:
+          - none
+          - blocked
+          - conditional
+
+permissions:
+  contents: read
+
+concurrency:
+  group: himaak-scan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  zap-baseline:
+    name: ZAP baseline scan + Himaak report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Inputs are passed through env vars, never interpolated into scripts (avoids script injection).
+      TARGET_URL: ${{ inputs.target_url }}
+      FAIL_ON: ${{ inputs.fail_on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate target URL
+        run: |
+          if ! printf '%s' "$TARGET_URL" | grep -Eq '^https?://[A-Za-z0-9._~:/?#@!$&()*+,;=%-]+$'; then
+            echo "::error::target_url must be a plain http(s) URL."
+            exit 1
+          fi
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          mkdir -p zap-reports
+          chmod 777 zap-reports
+          set +e
+          docker run --rm -v "$PWD/zap-reports:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t "$TARGET_URL" \
+            -r zap_raw_report.html \
+            -J zap_report.json
+          code=$?
+          set -e
+          # zap-baseline exits 1 (FAIL) or 2 (WARN) when it finds issues; Himaak's gate decides below.
+          echo "zap-baseline exit code: $code"
+          if [ ! -s zap-reports/zap_report.json ]; then
+            echo "::error::ZAP did not produce zap_report.json (exit code $code)."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate Himaak report and job summary
+        run: |
+          python scripts/generate_report.py \
+            --json zap-reports/zap_report.json \
+            --output-html zap-reports/himaak_report.html \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --fail-on "$FAIL_ON"
+
+      - name: Upload Himaak HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: himaak-security-report-html
+          path: zap-reports/himaak_report.html
+          if-no-files-found: ignore
+
+      - name: Upload raw ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-raw-reports
+          path: |
+            zap-reports/zap_raw_report.html
+            zap-reports/zap_report.json
+          if-no-files-found: ignore
