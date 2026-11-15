@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/images/logo-dark.png" alt="ASAAS AI Logo" width="90">
+  <img src="assets/images/logo-dark.png" alt="Himaak by ASAAS AI" width="90">
 </p>
 
 <h1 align="center">
-  منظومة أساس للفحص الأمني المؤتمت<br>
-  <span style="color: #ba9555;">ASAAS AI Automated Security Assessment</span>
+  حِماك | منظومة الفحص الأمني المؤتمت<br>
+  <span style="color: #ba9555;">Himaak — Automated Security Assessment, by ASAAS AI</span>
 </h1>
 
 <p align="center">
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/ASAAS-Visual_Identity-ba9555?style=for-the-badge" alt="Asaas Identity">
+  <img src="https://img.shields.io/badge/Himaak-by_ASAAS_AI-ba9555?style=for-the-badge" alt="Himaak by ASAAS AI">
   <img src="https://img.shields.io/badge/OWASP-ZAP_Baseline-221f1f?style=for-the-badge&logo=owasp" alt="OWASP ZAP">
   <img src="https://img.shields.io/badge/Design-Liquid_Glass-d3c6b4?style=for-the-badge" alt="Liquid Glass">
   <img src="https://img.shields.io/badge/Typography-Thmanyah-8f6626?style=for-the-badge" alt="Thmanyah">
@@ -23,7 +23,7 @@
 
 ## 🌟 نظرة عامة | Overview
 
-يقوم هذا المشروع بتنفيذ فحص أمني سلبي مؤتمت (Baseline Security Scan) ضد تطبيقات وواجهات الويب باستخدام محرك **OWASP ZAP** داخل بيئة GitHub Actions أو محلياً، مع تحويل مخرجات الفحص الخام تلقائياً إلى **تقارير تنفيذية عالية الاحترافية** مصممة بالكامل وفق لغة التصميم الخاصة بشركة أساس:
+**حِماك** (Himaak) منتج من شركة أساس للذكاء الاصطناعي، يقوم بتنفيذ فحص أمني سلبي مؤتمت (Baseline Security Scan) ضد تطبيقات وواجهات الويب باستخدام محرك **OWASP ZAP** داخل بيئة GitHub Actions أو محلياً، مع تحويل مخرجات الفحص الخام تلقائياً إلى **تقارير تنفيذية عالية الاحترافية** مصممة بالكامل وفق لغة التصميم الخاصة بشركة أساس:
 
 1. **الواجهات التفاعلية (Interactive Dashboard):**
    - منصة ويب متكاملة (`index.html`) تتيح معاينة فورية لتقارير الفحص أو رفع أي ملف `zap_report.json` عبر السحب والإفلات.
@@ -36,7 +36,14 @@
    - قابل للتصدير والطباعة كتقرير PDF رسمي جاهز للإدارة والمطورين.
 
 3. **لوحة معلومات سير العمل (GitHub Actions Step Summary):**
-   - إبراز مؤشرات الأداء الأمني ومؤشر السلامة (Security Health Score) مباشرة داخل واجهة GitHub Actions.
+   - إبراز مؤشرات الأداء الأمني ومؤشر السلامة (Security Health Score) وقرار الإطلاق مباشرة داخل واجهة GitHub Actions.
+
+4. **بوابة قرار الإطلاق (Release Gate):** سياسة واحدة يطبقها التقرير ولوحة التحكم وسير العمل:
+   - **مؤشر السلامة** = 100 − (25 × عالية + 10 × متوسطة + 3 × منخفضة)، بحد أدنى صفر.
+   - **محجوب (Blocked):** عند وجود أي ثغرة عالية الخطورة أو انخفاض المؤشر دون 50.
+   - **مشروط (Conditional):** عند وجود ثغرات متوسطة فقط (مهلة معالجة 14 يوماً).
+   - **معتمد (Approved):** لا ثغرات عالية ولا متوسطة.
+   - يمكن جعل سير العمل يفشل تلقائياً عبر الخيار `--fail-on blocked` أو `--fail-on conditional`.
 
 ---
 
@@ -71,20 +78,20 @@
 ### 1. التشغيل عبر GitHub Actions (سير العمل الآلي)
 
 1. توجه إلى تبويب **Actions** داخل مستودع المشروع على GitHub.
-2. اختر سير العمل المسمى **🛡️ ASAAS AI Security Scan**.
+2. اختر سير العمل المسمى **🛡️ Himaak Security Scan**.
 3. انقر على زر **Run workflow**.
-4. أدخل رابط الموقع المستهدف في حقل `target_url` (مثال: `https://example.com`).
+4. أدخل رابط الموقع المستهدف في حقل `target_url` (مثال: `https://example.com`)، واختر اختيارياً `fail_on` لإفشال التشغيل حسب قرار الإطلاق.
+   > افحص فقط المواقع التي تملكها أو لديك إذن مكتوب بفحصها.
 5. بعد اكتمال الفحص، ستظهر لوحة المؤشرات التنفيذية في ملخص التشغيل (**Job Summary**)، وستجد تقارير الفحص متاحة للتحميل في قسم **Artifacts**:
-   - `asaas-security-report-html`: التقرير التفاعلي الفاخر بهوية أساس.
-   - `zap-report-html`: التقرير بصيغة HTML مجهز للإرسال المباشر.
-   - `zap-report-json`: مخرجات JSON البرمجية لمعالجات CI/CD.
+   - `himaak-security-report-html`: تقرير حماك التفاعلي.
+   - `zap-raw-reports`: تقرير ZAP الأصلي بصيغة HTML وملف `zap_report.json` لمعالجات CI/CD.
 
 ### 2. الاستعراض والتشغيل المحلي (Local Dashboard & Runner)
 
 #### أ) فتح لوحة التحكم المحلية:
 افتح ملف `index.html` في أي متصفح ويب، وستتمكن من:
 - استعراض تقرير نموذجي تفاعلي بالكامل.
-- سحب وإفلات أي ملف `zap_report.json` لعرضه فوراً بهوية أساس.
+- سحب وإفلات أي ملف `zap_report.json` لعرضه فوراً (يُقرأ محلياً في المتصفح ولا يُرفع لأي خادم).
 - توليد أوامر التشغيل عبر سطر الأوامر.
 
 #### ب) تشغيل الفحص عبر Docker محلياً:
@@ -100,11 +107,18 @@ docker run --rm -v $(pwd)/zap-reports:/zap/wrk/:rw \
   -J zap_report.json
 ```
 
-#### ج) تحويل ملف JSON إلى تقرير هوية أساس:
+#### ج) تحويل ملف JSON إلى تقرير حماك:
 ```bash
 python scripts/generate_report.py \
   --json zap-reports/zap_report.json \
-  --output-html zap-reports/asaas_security_report.html
+  --output-html zap-reports/himaak_report.html   --fail-on blocked        # اختياري: يعيد رمز خروج 1 إذا كان الإطلاق محجوباً
+```
+
+#### د) إعادة بناء لوحة التحكم والتحقق منها:
+```bash
+python scripts/build_index.py
+python scripts/generate_report.py --json zap/wrk/sample_zap_report.json --output-html docs/sample_report.html
+python scripts/verify_all_pages.py
 ```
 
 ---
@@ -116,7 +130,7 @@ owasp-zap-workflow-main/
 │
 ├── .github/
 │   └── workflows/
-│       └── zap-scan.yml           # سير عمل GitHub Actions المؤتمت بهوية أساس
+│       └── zap-scan.yml           # سير عمل GitHub Actions (فحص ZAP + تقرير حماك)
 │
 ├── assets/                        # أصول ومعايير الهوية البصرية لشركة أساس
 │   ├── fonts/
@@ -135,12 +149,16 @@ owasp-zap-workflow-main/
 │       └── index.css              # ملف الربط الشامل للأنماط
 │
 ├── scripts/
-│   └── generate_report.py         # محرك استخلاص وتوليد تقارير أساس بصيغتي HTML و Markdown
+│   ├── generate_report.py         # يحوّل zap_report.json إلى تقرير HTML وملخص Markdown وقرار الإطلاق
+│   ├── build_index.py             # يبني لوحة التحكم index.html
+│   ├── cyber_data.py              # قاعدة المعرفة العربية للثغرات (المصدر الوحيد)
+│   └── verify_all_pages.py        # فحوصات سلامة للصفحات المولّدة
 │
 ├── docs/                          # وثائق ونماذج توضيحية
-│   ├── sample_report.html         # نموذج تقرير فحص تجريبي بهوية أساس
+│   ├── sample_report.html         # نموذج تقرير حماك من zap/wrk/sample_zap_report.json
 │   └── sample_summary.md          # نموذج ملخص سير العمل في GitHub Actions
 │
+├── zap/wrk/sample_zap_report.json # مثال لمخرجات ZAP يُستخدم في النماذج
 ├── index.html                     # منصة الويب التفاعلية ولوحة استعراض تقارير الفحص
 ├── LICENSE                        # ترخيص المشروع (MIT)
 └── README.md                      # دليل التوثيق الرسمي للمشروع
@@ -155,10 +173,11 @@ owasp-zap-workflow-main/
 - حماية نماذج البيانات والتحقق من متانة رموز منع تزوير الطلبات (Anti-CSRF).
 - كشف مؤشرات تسريب المعلومات وأرقام الإصدارات في ترويسات الخوادم.
 - فحص قيود ملفات تعريف الارتباط (`HttpOnly`, `Secure`, `SameSite`).
+- **أمان التقرير نفسه:** كل ما يأتي من ملف ZAP (أوصاف الثغرات، الروابط، الأدلة، حمولات الهجوم) يُعامل كبيانات غير موثوقة؛ يُهرَّب في Python ويُعرض كنص فقط في المتصفح، ولا تُقبل إلا روابط `http/https`، فلا يمكن لموقع مفحوص حقن سكربت في التقرير.
 
 ---
 
 <p align="center">
-  <strong>شركة أساس للذكاء الاصطناعي &copy; 2026</strong><br>
-  جميع الحقوق محفوظة | ASAAS AI Security Systems
+  <strong>حِماك · من شركة أساس للذكاء الاصطناعي &copy; 2026</strong><br>
+  جميع الحقوق محفوظة | Himaak by ASAAS AI
 </p>
