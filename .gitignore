@@ -17,3 +17,7 @@ himaak_report.html
 .idea/
 .DS_Store
 Thumbs.db
+
+# Himaak platform runtime data
+backend/data/
+backend/.env
