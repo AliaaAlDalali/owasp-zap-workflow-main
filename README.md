@@ -159,6 +159,7 @@ owasp-zap-workflow-main/
 │   └── knowledge.py               # قاعدة المعرفة العربية للثغرات
 │
 ├── backend/                       # منصة حماك (FastAPI) — انظر backend/README.md
+├── frontend/                      # واجهة منصة حماك (React + Vite) — انظر frontend/README.md
 │
 ├── docs/                          # وثائق ونماذج توضيحية
 │   ├── sample_report.html         # نموذج تقرير حماك من zap/wrk/sample_zap_report.json
