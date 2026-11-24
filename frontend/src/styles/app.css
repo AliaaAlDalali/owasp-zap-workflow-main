@@ -1,0 +1,212 @@
+/* Himaak site styles, layered on the asaas-ui kit. Tokens only; logical properties only. */
+
+/* ───────── Brand ───────── */
+.himaak-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+.himaak-mark svg { width: 22px; height: 22px; }
+.brand > span:last-child { display: grid; }
+
+/* ───────── Page head ───────── */
+.page-head { align-items: flex-end; }
+.page-head__text { display: grid; gap: 6px; min-width: 0; }
+.page-head__text h1 { overflow-wrap: anywhere; }
+/* A site address as the title: interface font, so it reads as an address, not a heading. */
+.page-head__text h1[dir='ltr'] { font-family: var(--font); font-size: 22px; text-align: start; }
+.page-head__text .cluster { gap: 8px; }
+
+.back-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.back-link svg { width: 18px; height: 18px; margin-inline-end: 6px; }
+.back-link:hover { color: var(--accent); }
+
+/* ───────── Rows ───────── */
+a.row,
+button.row {
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+  text-align: start;
+  border: 0;
+  width: 100%;
+  cursor: pointer;
+}
+/* Title and meta are spans (rows are links or buttons): make them blocks so the kit's ellipsis applies. */
+.row__main > .row__title,
+.row__main > .row__meta { display: block; }
+/* Finding titles ("Arabic (ZAP name)") differ only at the end, so they wrap instead of being cut. */
+.finding-row .row__title { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+.row__chevron { flex: none; width: 18px; height: 18px; color: var(--text-3); }
+.scan-row__state { gap: 8px; justify-content: flex-end; flex-wrap: nowrap; }
+.scan-row__state .num { font-size: 17px; }
+
+@media (max-width: 640px) {
+  .row--stack .row__chevron { display: none; }
+  .finding-row .row__amount { padding-inline-start: 0; }
+  .scan-row__state { justify-content: flex-start; }
+}
+
+/* ───────── Score ───────── */
+.score { display: grid; justify-items: center; line-height: 1.1; }
+.score__value { font-size: 40px; font-weight: 700; }
+.score__of { font-size: 12.5px; color: var(--text-3); }
+
+.latest {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.latest p { margin: 0; max-width: 100%; }
+
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+}
+.verdict__text {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.verdict__text p { margin: 0; }
+.risk-stats { align-content: start; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 640px) {
+  .verdict { justify-content: center; }
+}
+
+/* ───────── Site verification ───────── */
+.verify-option {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--glass-inset);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  min-width: 0;
+}
+.verify-option h3,
+.verify-option p { margin: 0; }
+
+.copy-value { display: grid; gap: 4px; min-width: 0; }
+.copy-value__label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.copy-value__box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-inline-start: 12px;
+  border-radius: var(--radius-md);
+  background: var(--glass-tint);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  min-width: 0;
+}
+.copy-value__box code {
+  flex: 1;
+  min-width: 0;
+  padding-block: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.danger-zone { display: flex; justify-content: flex-start; }
+
+/* ───────── Finding inspector ───────── */
+.finding { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.finding__meta { gap: 8px; }
+.finding__section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.finding__section h3 { margin: 0; }
+.finding__text { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+
+.code-block { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; min-width: 0; }
+.code-block pre {
+  width: 100%;
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  background: var(--glass-inset);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.instances,
+.references {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.instance {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--glass-inset);
+  min-width: 0;
+}
+.instance__uri { font-size: 13px; overflow-wrap: anywhere; text-align: start; }
+.instance__detail { font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.references a { color: var(--accent); font-size: 13px; overflow-wrap: anywhere; }
+
+/* ───────── Sign-in ───────── */
+.auth { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr; }
+.auth__top { padding-block-start: max(12px, env(safe-area-inset-top, 0px)); }
+.auth__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.auth__actions { gap: 4px; flex-wrap: nowrap; }
+.auth__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  align-items: center;
+  gap: clamp(24px, 5vw, 64px);
+  padding-block: clamp(24px, 6vw, 72px);
+}
+.auth__intro { display: grid; gap: 12px; }
+.auth__intro h1,
+.auth__intro p { margin: 0; }
+.auth__card .form > .btn { justify-self: stretch; }
+
+@media (max-width: 900px) {
+  .auth__main { grid-template-columns: minmax(0, 1fr); align-content: start; }
+}
+
+/* Honeypot: off-screen for people, still in the form for bots. */
+.honeypot {
+  position: absolute;
+  inset-inline-start: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.add-site > .btn { justify-self: start; }
+@media (max-width: 640px) {
+  .add-site > .btn { justify-self: stretch; }
+}

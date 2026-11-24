@@ -151,8 +151,15 @@ owasp-zap-workflow-main/
 ├── scripts/
 │   ├── generate_report.py         # يحوّل zap_report.json إلى تقرير HTML وملخص Markdown وقرار الإطلاق
 │   ├── build_index.py             # يبني لوحة التحكم index.html
-│   ├── cyber_data.py              # قاعدة المعرفة العربية للثغرات (المصدر الوحيد)
 │   └── verify_all_pages.py        # فحوصات سلامة للصفحات المولّدة
+│
+├── himaak_core/                   # منطق مشترك بين الأداة والمنصة (مصدر واحد للحقيقة)
+│   ├── zap.py                     # قراءة تقارير ZAP وتحويل HTML إلى نص آمن
+│   ├── policy.py                  # مؤشر السلامة وسياسة قرار الإطلاق
+│   └── knowledge.py               # قاعدة المعرفة العربية للثغرات
+│
+├── backend/                       # منصة حماك (FastAPI) — انظر backend/README.md
+├── frontend/                      # واجهة منصة حماك (React + Vite) — انظر frontend/README.md
 │
 ├── docs/                          # وثائق ونماذج توضيحية
 │   ├── sample_report.html         # نموذج تقرير حماك من zap/wrk/sample_zap_report.json
