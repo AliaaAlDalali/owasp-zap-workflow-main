@@ -234,3 +234,80 @@ Set-Cookie: session_id=abc123xyz; Secure; HttpOnly; SameSite=Strict; Path=/;""",
         ]
     }
 }
+
+
+# ZAP plugin IDs for the entries above. ZAP renames alerts between versions
+# (e.g. "Anti-CSRF Tokens Check" is now "Absence of Anti-CSRF Tokens"), but plugin IDs stay.
+PLUGIN_KNOWLEDGE = {
+    "40018": "SQL Injection",
+    "10038": "Content Security Policy (CSP) Header Not Set",
+    "10035": "Strict-Transport-Security Header Not Set",
+    "10202": "Anti-CSRF Tokens Check",
+    "20012": "Anti-CSRF Tokens Check",
+    "10021": "X-Content-Type-Options Header Missing",
+    "10020": "Missing Anti-clickjacking Header",
+    "10036": 'Server Leaks Version Information via "Server" HTTP Response Header Field',
+    "10096": "Timestamp Disclosure - Unix",
+    "40012": "Cross Site Scripting (Reflected)",
+    "10010": "Cookie No HttpOnly Flag",
+}
+
+# Arabic titles for common ZAP baseline alerts that have no full entry yet.
+# Shown as "Arabic (ZAP name)", so variants that share a plugin ID stay distinct.
+ARABIC_TITLES = {
+    "2": "كشف عنوان IP داخلي",
+    "10003": "مكتبة JavaScript معروفة الثغرات",
+    "10009": "تسريب معلومات الخادم داخل الصفحة",
+    "10011": "ملف تعريف ارتباط بدون خاصية Secure",
+    "10015": "مراجعة توجيهات التخزين المؤقت",
+    "10017": "تضمين ملفات JavaScript من نطاق خارجي",
+    "10019": "غياب ترويسة نوع المحتوى (Content-Type)",
+    "10023": "كشف رسائل تصحيح الأخطاء",
+    "10024": "كشف معلومات حساسة في الرابط",
+    "10025": "كشف معلومات حساسة في ترويسة Referer",
+    "10027": "تعليقات في الشيفرة قد تكشف معلومات",
+    "10028": "إعادة توجيه إلى موقع خارجي",
+    "10031": "خاصية HTML يتحكم بها المستخدم (احتمال XSS)",
+    "10037": "تسريب معلومات الخادم عبر ترويسة X-Powered-By",
+    "10039": "تسريب معلومات عبر ترويسة X-Backend-Server",
+    "10040": "محتوى غير مشفّر داخل صفحات آمنة",
+    "10041": "نموذج ينتقل من HTTP إلى HTTPS بشكل غير آمن",
+    "10042": "نموذج يرسل من HTTPS إلى HTTP بشكل غير آمن",
+    "10043": "حدث JavaScript يتحكم به المستخدم (احتمال XSS)",
+    "10044": "إعادة توجيه تكشف محتوى الصفحة",
+    "10049": "محتوى قابل للتخزين المؤقت",
+    "10050": "استجابة مسترجعة من التخزين المؤقت",
+    "10054": "ملف تعريف ارتباط بدون خاصية SameSite",
+    "10055": "ضعف في سياسة أمان المحتوى",
+    "10056": "كشف معلومات تصحيح عبر ترويسة X-Debug-Token",
+    "10061": "كشف إصدار ASP.NET في الترويسات",
+    "10062": "كشف معلومات شخصية",
+    "10063": "غياب ترويسة سياسة الأذونات (Permissions Policy)",
+    "10094": "كشف بيانات مرمّزة بـ Base64",
+    "10097": "كشف قيم تجزئة (Hash)",
+    "10098": "إعدادات خاطئة لمشاركة الموارد بين النطاقات",
+    "10099": "كشف الشيفرة المصدرية",
+    "10105": "طريقة مصادقة ضعيفة",
+    "10106": "موقع يعمل بـ HTTP فقط دون HTTPS",
+    "10108": "ثغرة الاستيلاء على التبويب العكسي (Reverse Tabnabbing)",
+    "10109": "تطبيق ويب حديث",
+    "10110": "استخدام دوال JavaScript خطرة",
+    "10111": "رصد طلب مصادقة",
+    "10112": "رصد استجابة لإدارة الجلسات",
+    "90003": "غياب خاصية سلامة الموارد الفرعية (SRI)",
+    "90004": "غياب ترويسات العزل بين المصادر",
+    "90011": "عدم تطابق ترميز الأحرف",
+    "90022": "كشف رسائل أخطاء التطبيق",
+    "90033": "ملف تعريف ارتباط بنطاق واسع",
+}
+
+
+def knowledge_for(plugin_id, alert_name):
+    """The knowledge entry for an alert: exact name first, then ZAP plugin ID, then an Arabic title only."""
+    if alert_name in CYBER_KNOWLEDGE:
+        return CYBER_KNOWLEDGE[alert_name]
+    key = PLUGIN_KNOWLEDGE.get(plugin_id)
+    if key:
+        return CYBER_KNOWLEDGE[key]
+    title = ARABIC_TITLES.get(plugin_id)
+    return {"name_ar": f"{title} ({alert_name})"} if title else {}

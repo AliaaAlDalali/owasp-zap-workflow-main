@@ -48,6 +48,8 @@ button.row {
 /* Title and meta are spans (rows are links or buttons): make them blocks so the kit's ellipsis applies. */
 .row__main > .row__title,
 .row__main > .row__meta { display: block; }
+/* Finding titles ("Arabic (ZAP name)") differ only at the end, so they wrap instead of being cut. */
+.finding-row .row__title { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
 .row__chevron { flex: none; width: 18px; height: 18px; color: var(--text-3); }
 .scan-row__state { gap: 8px; justify-content: flex-end; flex-wrap: nowrap; }
 .scan-row__state .num { font-size: 17px; }

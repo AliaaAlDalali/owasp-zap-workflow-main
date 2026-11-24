@@ -27,7 +27,8 @@ class ScanRunError(Exception):
 
 
 class ZapRunner:
-    async def run_baseline(self, scan_id: int, url: str) -> dict[str, Any]:
+    async def run_baseline(self, scan_id: int, url: str, host: str, addresses: list[str]) -> dict[str, Any]:
+        """`addresses` are the host's already-checked public addresses; the container uses them for `host`."""
         if not url.startswith(("http://", "https://")):
             raise ScanRunError("رابط الفحص غير صالح.")
 
@@ -44,6 +45,7 @@ class ZapRunner:
             "--pids-limit", "1024",
             "--security-opt", "no-new-privileges",
             "-v", f"{work_dir}:/zap/wrk/:rw",
+            *self._pin_host(host, addresses),
             settings.zap_image,
             "zap-baseline.py", "-t", url, "-J", "zap_report.json", "-I",
         ]
@@ -71,6 +73,15 @@ class ZapRunner:
             return await asyncio.to_thread(self._read_report, report_path)
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
+
+    @staticmethod
+    def _pin_host(host: str, addresses: list[str]) -> list[str]:
+        """`--add-host` so ZAP reaches the checked address, preferring IPv4 (Docker's default network)."""
+        if not addresses or host in addresses:
+            return []  # an IP address target needs no lookup
+        ipv4 = [a for a in addresses if ":" not in a]
+        address = ipv4[0] if ipv4 else f"[{addresses[0]}]"
+        return ["--add-host", f"{host}:{address}"]
 
     @staticmethod
     def _read_report(path: Path) -> dict[str, Any]:

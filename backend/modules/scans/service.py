@@ -67,8 +67,10 @@ class ScanService:
             return False
         try:
             target_url = normalize_target_url(scan["target_url"])
-            await resolve_public_addresses(target_url.host, target_url.port)
-            report = await self.runner.run_baseline(scan["id"], target_url.url)
+            # Checked here and pinned inside the container, so the domain cannot be re-pointed
+            # at an internal address between this check and ZAP's own lookup (DNS rebinding).
+            addresses = await resolve_public_addresses(target_url.host, target_url.port)
+            report = await self.runner.run_baseline(scan["id"], target_url.url, target_url.host, addresses)
             await self.complete(scan["id"], report)
         except (AppError, ScanRunError) as error:
             logger.warning("Scan %s failed: %s", scan["id"], error.message)

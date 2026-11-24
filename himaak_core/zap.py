@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from html.parser import HTMLParser
 
-from himaak_core.knowledge import CYBER_KNOWLEDGE
+from himaak_core.knowledge import knowledge_for
 from himaak_core.policy import assess_release
 
 
@@ -114,7 +114,7 @@ def enrich_alert(a):
         })
 
     alert_name = str(a.get("name") or a.get("alert") or "Unknown Issue")
-    knowledge = CYBER_KNOWLEDGE.get(alert_name, {})
+    knowledge = knowledge_for(str(a.get("pluginid", "") or ""), alert_name)
     default_cvss = {3: "8.5", 2: "6.0", 1: "3.5"}.get(risk_code, "2.0")
     default_cia = {
         "c": "مرتفع (High)" if risk_code == 3 else "متوسط (Medium)" if risk_code == 2 else "منخفض (Low)",

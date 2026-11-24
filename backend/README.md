@@ -72,7 +72,7 @@ All routes except `/auth/*` and `/health` need the session cookie. Organization 
   - Every resolved address must be public. This is checked when the site is added, when a scan is queued, and again just before it runs.
   - The ownership file is fetched from the resolved IP itself (SNI kept), with no redirects. This prevents DNS rebinding during verification.
 - **ZAP containers** run with memory, CPU and process limits, `no-new-privileges` and a timeout. Arguments are passed as a list (no shell). Each container is removed after its scan.
-- **ZAP still resolves the host itself during the scan.** In production, the scan host's firewall must block outbound traffic from containers to private ranges and the cloud metadata address. See "Before production".
+- **The checked address is pinned inside the ZAP container** (`--add-host`), so the site's domain cannot be re-pointed at an internal address between the check and the scan. Other hosts the site links to or redirects to are still resolved by ZAP, so in production the scan host's firewall must also block outbound traffic from containers to private ranges and the cloud metadata address. See "Before production".
 - **Scan data is plain text.** The HTML in ZAP reports is converted to text by `himaak_core` before it is stored, so the front end never has to render scanner HTML.
 - **Passwords and sessions:**
   - Passwords are hashed with `scrypt`.
@@ -89,11 +89,18 @@ Checked by running the server and sending real HTTP requests (45 checks, all pas
 - rejection of internal targets: `127.0.0.1`, `localhost`, `169.254.169.254`, `ftp:`, credentials in the URL, single-label hosts
 - real DNS and file verification attempts
 - scan before verification, duplicate active scan
-- the worker picking up a scan and failing it with a clear message (no Docker here)
+- the worker picking up a scan and failing it with a clear message when Docker is missing
 - storing real ZAP JSON (score 52, blocked); findings list, filter and details; plain-text storage of injected HTML
 - comparison: new, fixed and persisting findings
 
-**Not yet verified:** a real ZAP container run, because Docker is not installed on the development machine.
+**Real ZAP runs** (Docker 29 in WSL Ubuntu, ZAP 2.17.0, against Google's public scanner test bed `public-firing-range.appspot.com`):
+- scans complete in about two minutes: 30 alert types, 110 locations, score 0, blocked
+- the container runs with the memory and CPU limits and the pinned address, and is removed with its work folder afterwards
+- an unreachable site fails the scan with a clear message
+- a second scan of the same site compares as 30 still open, 0 new, 0 fixed (stable fingerprints)
+- all 30 alert types get Arabic titles (matched by ZAP plugin ID, see `himaak_core/knowledge.py`)
+
+The API ran in a `python:3.12-slim` container with the host's Docker socket mounted. The scan work folder must be the same path inside and outside that container, because ZAP containers are started by the host's Docker.
 
 ## Before production
 
